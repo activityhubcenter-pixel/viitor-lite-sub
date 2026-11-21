@@ -1,0 +1,681 @@
+name: Build ViiTor Lite APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Android Project
+        run: |
+          mkdir -p app/src/main/java/com/example/jpthtranslator
+
+          cat << 'EOF' > gradle.properties
+          android.useAndroidX=true
+          kotlin.code.style=official
+          EOF
+
+          cat << 'EOF' > settings.gradle.kts
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "JPTHLiveSub"
+          include(":app")
+          EOF
+
+          cat << 'EOF' > build.gradle.kts
+          plugins {
+              id("com.android.application") version "8.5.0" apply false
+              id("org.jetbrains.kotlin.android") version "1.9.24" apply false
+          }
+          EOF
+
+          cat << 'EOF' > app/build.gradle.kts
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.example.jpthtranslator"
+              compileSdk = 34
+              defaultConfig {
+                  applicationId = "com.example.jpthtranslator"
+                  minSdk = 29
+                  targetSdk = 34
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+          }
+          dependencies {
+              implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.RECORD_AUDIO" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="JP-TH Live Sub"
+                  android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".LiveTranslateService"
+                      android:enabled="true"
+                      android:exported="false"
+                      android:foregroundServiceType="mediaProjection" />
+              </application>
+          </manifest>
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/example/jpthtranslator/MainActivity.kt
+          package com.example.jpthtranslator
+
+          import android.Manifest
+          import android.app.Activity
+          import android.content.Context
+          import android.content.Intent
+          import android.content.pm.PackageManager
+          import android.graphics.Color
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.media.projection.MediaProjectionManager
+          import android.net.Uri
+          import android.os.Build
+          import android.os.Bundle
+          import android.provider.Settings
+          import android.widget.*
+
+          class MainActivity : Activity() {
+
+              private lateinit var apiKeyInput: EditText
+              private lateinit var bilingualSwitch: Switch
+              private lateinit var statusText: TextView
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val prefs = getSharedPreferences("sub_prefs", Context.MODE_PRIVATE)
+
+                  val root = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      setBackgroundColor(Color.parseColor("#12151C"))
+                      setPadding(56, 80, 56, 56)
+                  }
+
+                  val title = TextView(this).apply {
+                      text = "JP → TH Live Subtitle"
+                      textSize = 24f
+                      setTypeface(null, Typeface.BOLD)
+                      setTextColor(Color.WHITE)
+                      setPadding(0, 0, 0, 12)
+                  }
+
+                  val desc = TextView(this).apply {
+                      text = "แปลเสียงวิดีโอจาก Chrome เป็นซับลอยจออัตโนมัติ"
+                      textSize = 14f
+                      setTextColor(Color.parseColor("#9CA3AF"))
+                      setPadding(0, 0, 0, 48)
+                  }
+
+                  val inputBg = GradientDrawable().apply {
+                      setColor(Color.parseColor("#1F2430"))
+                      cornerRadius = 24f
+                      setStroke(2, Color.parseColor("#374151"))
+                  }
+
+                  apiKeyInput = EditText(this).apply {
+                      hint = "วาง Gemini API Key (AIza...)"
+                      setHintTextColor(Color.parseColor("#6B7280"))
+                      setTextColor(Color.WHITE)
+                      setText(prefs.getString("api_key", ""))
+                      background = inputBg
+                      setPadding(36, 32, 36, 32)
+                      setSingleLine()
+                  }
+
+                  bilingualSwitch = Switch(this).apply {
+                      text = "แสดงซับญี่ปุ่นต้นฉบับคู่กับคำแปลไทย"
+                      setTextColor(Color.WHITE)
+                      textSize = 15f
+                      isChecked = prefs.getBoolean("bilingual", true)
+                      setPadding(8, 40, 8, 40)
+                  }
+
+                  val startBtnBg = GradientDrawable().apply {
+                      setColor(Color.parseColor("#2563EB"))
+                      cornerRadius = 28f
+                  }
+
+                  val startBtn = Button(this).apply {
+                      text = "เปิดซับไตเติลลอยจอ"
+                      setTextColor(Color.WHITE)
+                      textSize = 16f
+                      setTypeface(null, Typeface.BOLD)
+                      background = startBtnBg
+                      setPadding(0, 32, 0, 32)
+                      setOnClickListener {
+                          val key = apiKeyInput.text.toString().trim()
+                          if (key.isEmpty()) {
+                              Toast.makeText(this@MainActivity, "กรุณาใส่ Gemini API Key ก่อน", Toast.LENGTH_SHORT).show()
+                              return@setOnClickListener
+                          }
+                          prefs.edit()
+                              .putString("api_key", key)
+                              .putBoolean("bilingual", bilingualSwitch.isChecked)
+                              .apply()
+                          checkPermissionsAndStart()
+                      }
+                  }
+
+                  val stopBtn = Button(this).apply {
+                      text = "หยุดการทำงาน"
+                      setTextColor(Color.parseColor("#F87171"))
+                      setBackgroundColor(Color.TRANSPARENT)
+                      setPadding(0, 28, 0, 28)
+                      setOnClickListener {
+                          stopService(Intent(this@MainActivity, LiveTranslateService::class.java))
+                          statusText.text = "สถานะ: หยุดการทำงานแล้ว"
+                      }
+                  }
+
+                  statusText = TextView(this).apply {
+                      text = "สถานะ: พร้อมใช้งาน"
+                      textSize = 14f
+                      setTextColor(Color.parseColor("#60A5FA"))
+                      setPadding(0, 24, 0, 0)
+                  }
+
+                  root.addView(title)
+                  root.addView(desc)
+                  root.addView(apiKeyInput)
+                  root.addView(bilingualSwitch)
+                  root.addView(startBtn)
+                  root.addView(stopBtn)
+                  root.addView(statusText)
+                  setContentView(root)
+              }
+
+              private fun checkPermissionsAndStart() {
+                  if (!Settings.canDrawOverlays(this)) {
+                      Toast.makeText(this, "กรุณาเปิดสิทธิ์ 'แสดงทับแอปอื่น' แล้วกดย้อนกลับ", Toast.LENGTH_LONG).show()
+                      startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                      return
+                  }
+                  val perms = mutableListOf(Manifest.permission.RECORD_AUDIO)
+                  if (Build.VERSION.SDK_INT >= 33) perms.add(Manifest.permission.POST_NOTIFICATIONS)
+                  val missing = perms.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+                  if (missing.isNotEmpty()) {
+                      requestPermissions(missing.toTypedArray(), 100)
+                  } else {
+                      requestAudioCapture()
+                  }
+              }
+
+              override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+                  if (requestCode == 100 && grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                      requestAudioCapture()
+                  } else {
+                      statusText.text = "จำเป็นต้องอนุญาตสิทธิ์เสียงก่อนใช้งาน"
+                  }
+              }
+
+              private fun requestAudioCapture() {
+                  val mgr = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                  startActivityForResult(mgr.createScreenCaptureIntent(), 200)
+              }
+
+              override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                  if (requestCode == 200 && resultCode == RESULT_OK && data != null) {
+                      val intent = Intent(this, LiveTranslateService::class.java).apply {
+                          putExtra("RESULT_CODE", resultCode)
+                          putExtra("DATA", data)
+                          putExtra("API_KEY", apiKeyInput.text.toString().trim())
+                          putExtra("BILINGUAL", bilingualSwitch.isChecked)
+                      }
+                      startForegroundService(intent)
+                      statusText.text = "กำลังทำงาน: เปิด Chrome เล่นวิดีโอได้เลย"
+                      moveTaskToBack(true)
+                  }
+              }
+          }
+          EOF
+
+          cat << 'EOF' > app/src/main/java/com/example/jpthtranslator/LiveTranslateService.kt
+          package com.example.jpthtranslator
+
+          import android.annotation.SuppressLint
+          import android.app.*
+          import android.content.Intent
+          import android.content.pm.ServiceInfo
+          import android.graphics.Color
+          import android.graphics.PixelFormat
+          import android.graphics.Typeface
+          import android.graphics.drawable.GradientDrawable
+          import android.media.*
+          import android.media.projection.MediaProjection
+          import android.media.projection.MediaProjectionManager
+          import android.os.Build
+          import android.os.IBinder
+          import android.util.Base64
+          import android.view.*
+          import android.widget.LinearLayout
+          import android.widget.TextView
+          import kotlinx.coroutines.*
+          import kotlinx.coroutines.channels.BufferOverflow
+          import kotlinx.coroutines.channels.Channel
+          import org.json.JSONArray
+          import org.json.JSONObject
+          import java.io.ByteArrayOutputStream
+          import java.net.HttpURLConnection
+          import java.net.URL
+          import java.nio.ByteBuffer
+          import java.nio.ByteOrder
+          import kotlin.math.sqrt
+
+          class LiveTranslateService : Service() {
+
+              private lateinit var windowManager: WindowManager
+              private lateinit var overlayRoot: LinearLayout
+              private lateinit var statusLabel: TextView
+              private lateinit var jpTextView: TextView
+              private lateinit var thTextView: TextView
+
+              private var mediaProjection: MediaProjection? = null
+              private var audioRecord: AudioRecord? = null
+              private var apiKey = ""
+              private var showBilingual = true
+              private var isPaused = false
+              private var fontSize = 17f
+
+              private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+              private val audioChannel = Channel<ByteArray>(capacity = 2, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  startForegroundNotif()
+                  val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: return START_NOT_STICKY
+                  apiKey = intent.getStringExtra("API_KEY") ?: ""
+                  showBilingual = intent.getBooleanExtra("BILINGUAL", true)
+
+                  val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
+                      intent.getParcelableExtra("DATA", Intent::class.java)
+                  } else {
+                      @Suppress("DEPRECATION")
+                      intent.getParcelableExtra("DATA")
+                  }
+
+                  if (data == null || apiKey.isEmpty()) {
+                      stopSelf()
+                      return START_NOT_STICKY
+                  }
+
+                  setupOverlay()
+                  val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                  mediaProjection = mgr.getMediaProjection(resultCode, data)
+
+                  startTranslator()
+                  startAudioCapture()
+                  return START_STICKY
+              }
+
+              @SuppressLint("ClickableViewAccessibility")
+              private fun setupOverlay() {
+                  windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+                  val sw = resources.displayMetrics.widthPixels
+                  val sh = resources.displayMetrics.heightPixels
+
+                  val bg = GradientDrawable().apply {
+                      setColor(Color.parseColor("#E611141C"))
+                      cornerRadius = 32f
+                      setStroke(2, Color.parseColor("#33FFFFFF"))
+                  }
+
+                  overlayRoot = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                      background = bg
+                      setPadding(32, 20, 32, 24)
+                  }
+
+                  val topBar = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
+                      setPadding(0, 0, 0, 10)
+                  }
+
+                  statusLabel = TextView(this).apply {
+                      text = "● กำลังฟังเสียง (ลากย้ายได้)"
+                      textSize = 12f
+                      setTextColor(Color.parseColor("#34D399"))
+                      layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                  }
+
+                  val fontDownBtn = TextView(this).apply {
+                      text = " A- "
+                      textSize = 13f
+                      setTextColor(Color.LTGRAY)
+                      setPadding(12, 4, 12, 4)
+                      setOnClickListener {
+                          fontSize = (fontSize - 2f).coerceAtLeast(12f)
+                          thTextView.textSize = fontSize
+                          jpTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
+                      }
+                  }
+
+                  val fontUpBtn = TextView(this).apply {
+                      text = " A+ "
+                      textSize = 13f
+                      setTextColor(Color.LTGRAY)
+                      setPadding(12, 4, 12, 4)
+                      setOnClickListener {
+                          fontSize = (fontSize + 2f).coerceAtMost(28f)
+                          thTextView.textSize = fontSize
+                          jpTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
+                      }
+                  }
+
+                  val pauseBtn = TextView(this).apply {
+                      text = " ⏸ "
+                      textSize = 15f
+                      setTextColor(Color.WHITE)
+                      setPadding(14, 4, 14, 4)
+                      setOnClickListener {
+                          isPaused = !isPaused
+                          text = if (isPaused) " ▶ " else " ⏸ "
+                          statusLabel.text = if (isPaused) "● หยุดแปลชั่วคราว" else "● กำลังฟังเสียง"
+                          statusLabel.setTextColor(if (isPaused) Color.parseColor("#FBBF24") else Color.parseColor("#34D399"))
+                      }
+                  }
+
+                  val closeBtn = TextView(this).apply {
+                      text = " ✕"
+                      textSize = 16f
+                      setTextColor(Color.parseColor("#F87171"))
+                      setPadding(14, 4, 4, 4)
+                      setOnClickListener { stopSelf() }
+                  }
+
+                  topBar.addView(statusLabel)
+                  topBar.addView(fontDownBtn)
+                  topBar.addView(fontUpBtn)
+                  topBar.addView(pauseBtn)
+                  topBar.addView(closeBtn)
+
+                  jpTextView = TextView(this).apply {
+                      text = ""
+                      textSize = fontSize - 3f
+                      setTextColor(Color.parseColor("#9CA3AF"))
+                      visibility = if (showBilingual) View.VISIBLE else View.GONE
+                      setPadding(0, 0, 0, 6)
+                  }
+
+                  thTextView = TextView(this).apply {
+                      text = "เปิดวิดีโอภาษาญี่ปุ่นใน Chrome ได้เลย..."
+                      textSize = fontSize
+                      setTypeface(null, Typeface.BOLD)
+                      setTextColor(Color.WHITE)
+                  }
+
+                  overlayRoot.addView(topBar)
+                  overlayRoot.addView(jpTextView)
+                  overlayRoot.addView(thTextView)
+
+                  val params = WindowManager.LayoutParams(
+                      (sw * 0.92).toInt(),
+                      WindowManager.LayoutParams.WRAP_CONTENT,
+                      WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                      WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                      PixelFormat.TRANSLUCENT
+                  ).apply {
+                      gravity = Gravity.TOP or Gravity.START
+                      x = (sw * 0.04).toInt()
+                      y = sh - 400
+                  }
+
+                  var ix = 0; var iy = 0; var tx = 0f; var ty = 0f
+                  overlayRoot.setOnTouchListener { _, e ->
+                      when (e.action) {
+                          MotionEvent.ACTION_DOWN -> { ix = params.x; iy = params.y; tx = e.rawX; ty = e.rawY; true }
+                          MotionEvent.ACTION_MOVE -> {
+                              params.x = ix + (e.rawX - tx).toInt()
+                              params.y = iy + (e.rawY - ty).toInt()
+                              windowManager.updateViewLayout(overlayRoot, params)
+                              true
+                          }
+                          else -> false
+                      }
+                  }
+                  windowManager.addView(overlayRoot, params)
+              }
+
+              @SuppressLint("MissingPermission")
+              private fun startAudioCapture() {
+                  val proj = mediaProjection ?: return
+                  val config = AudioPlaybackCaptureConfiguration.Builder(proj)
+                      .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+                      .addMatchingUsage(AudioAttributes.USAGE_GAME)
+                      .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+                      .build()
+
+                  val sr = 16000
+                  val fmt = AudioFormat.Builder()
+                      .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                      .setSampleRate(sr)
+                      .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                      .build()
+
+                  val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                  audioRecord = AudioRecord.Builder()
+                      .setAudioPlaybackCaptureConfig(config)
+                      .setAudioFormat(fmt)
+                      .setBufferSizeInBytes(minBuf * 2)
+                      .build()
+
+                  audioRecord?.startRecording()
+
+                  scope.launch {
+                      val buf = ByteArray(minBuf)
+                      val acc = ByteArrayOutputStream()
+                      var startT = System.currentTimeMillis()
+                      var lastSpeechT = 0L
+                      var hasSpeech = false
+
+                      while (isActive) {
+                          val read = audioRecord?.read(buf, 0, buf.size) ?: 0
+                          if (isPaused) {
+                              acc.reset()
+                              hasSpeech = false
+                              continue
+                          }
+                          if (read > 0) {
+                              val rms = calcRms(buf, read)
+                              val now = System.currentTimeMillis()
+                              if (rms > 220.0) {
+                                  hasSpeech = true
+                                  lastSpeechT = now
+                              }
+                              if (hasSpeech) acc.write(buf, 0, read) else startT = now
+
+                              val elapsed = now - startT
+                              val silence = now - lastSpeechT
+                              if (hasSpeech && ((silence > 650 && elapsed > 1100) || elapsed >= 3800)) {
+                                  val pcm = acc.toByteArray()
+                                  acc.reset()
+                                  hasSpeech = false
+                                  startT = now
+                                  audioChannel.trySend(pcm)
+                              }
+                          }
+                      }
+                  }
+              }
+
+              private fun startTranslator() {
+                  scope.launch {
+                      for (pcm in audioChannel) {
+                          if (isPaused) continue
+                          val wav = pcmToWav(pcm, 16000)
+                          val res = callGemini(wav)
+                          if (res.isNotBlank() && !res.contains("SILENT", ignoreCase = true)) {
+                              val lines = res.lines().map { it.trim() }.filter { it.isNotEmpty() }
+                              val jp = lines.find { it.startsWith("JP:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
+                              val th = lines.find { it.startsWith("TH:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: res
+
+                              withContext(Dispatchers.Main) {
+                                  if (showBilingual && jp.isNotEmpty()) {
+                                      jpTextView.visibility = View.VISIBLE
+                                      jpTextView.text = jp
+                                  } else {
+                                      jpTextView.visibility = View.GONE
+                                  }
+                                  thTextView.text = th
+                              }
+                          }
+                      }
+                  }
+              }
+
+              private fun callGemini(wav: ByteArray): String {
+                  return try {
+                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+                      val conn = (url.openConnection() as HttpURLConnection).apply {
+                          requestMethod = "POST"
+                          setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                          doOutput = true
+                          connectTimeout = 8000
+                          readTimeout = 8000
+                      }
+                      val b64 = Base64.encodeToString(wav, Base64.NO_WRAP)
+                      val prompt = "ฟังเสียงภาษาญี่ปุ่นในไฟล์นี้ แล้วตอบกลับ 2 บรรทัดตามรูปแบบนี้เท่านั้น:\n" +
+                              "JP: <ถอดเสียงภาษาญี่ปุ่นที่ได้ยิน>\n" +
+                              "TH: <แปลเป็นซับไตเติลภาษาไทยที่เป็นธรรมชาติและกระชับ>\n" +
+                              "หากไม่มีเสียงพูดภาษาญี่ปุ่นหรือมีแต่เสียงดนตรี ให้ตอบคำเดียวว่า SILENT"
+
+                      val body = JSONObject().apply {
+                          put("contents", JSONArray().put(JSONObject().apply {
+                              put("parts", JSONArray().apply {
+                                  put(JSONObject().put("text", prompt))
+                                  put(JSONObject().put("inline_data", JSONObject().apply {
+                                      put("mime_type", "audio/wav")
+                                      put("data", b64)
+                                  }))
+                              })
+                          }))
+                          put("generationConfig", JSONObject().put("temperature", 0.2))
+                      }
+
+                      conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+
+                      if (conn.responseCode == 200) {
+                          val text = conn.inputStream.bufferedReader().use { it.readText() }
+                          JSONObject(text).getJSONArray("candidates").getJSONObject(0)
+                              .getJSONObject("content").getJSONArray("parts").getJSONObject(0)
+                              .getString("text").trim()
+                      } else if (conn.responseCode == 429) {
+                          "TH: (โควตาแปลเต็มชั่วคราว รอสักครู่...)"
+                      } else ""
+                  } catch (_: Exception) { "" }
+              }
+
+              private fun calcRms(buf: ByteArray, len: Int): Double {
+                  var sum = 0.0
+                  val count = len / 2
+                  if (count == 0) return 0.0
+                  for (i in 0 until len - 1 step 2) {
+                      val s = ((buf[i + 1].toInt() shl 8) or (buf[i].toInt() and 0xFF)).toShort()
+                      sum += s * s
+                  }
+                  return sqrt(sum / count)
+              }
+
+              private fun pcmToWav(pcm: ByteArray, sr: Int): ByteArray {
+                  val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
+                      put("RIFF".toByteArray()); putInt(pcm.size + 36)
+                      put("WAVE".toByteArray()); put("fmt ".toByteArray())
+                      putInt(16); putShort(1); putShort(1); putInt(sr)
+                      putInt(sr * 2); putShort(2); putShort(16)
+                      put("data".toByteArray()); putInt(pcm.size)
+                  }.array()
+                  return header + pcm
+              }
+
+              private fun startForegroundNotif() {
+                  val id = "jp_th_sub_channel"
+                  getSystemService(NotificationManager::class.java).createNotificationChannel(
+                      NotificationChannel(id, "JP-TH Live Sub", NotificationManager.IMPORTANCE_LOW)
+                  )
+                  val notif = Notification.Builder(this, id)
+                      .setContentTitle("JP-TH Live Subtitle กำลังทำงาน")
+                      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                      .build()
+                  if (Build.VERSION.SDK_INT >= 29) {
+                      startForeground(1, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+                  } else {
+                      startForeground(1, notif)
+                  }
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  scope.cancel()
+                  audioChannel.close()
+                  try { audioRecord?.stop(); audioRecord?.release() } catch (_: Exception) {}
+                  if (::overlayRoot.isInitialized) windowManager.removeView(overlayRoot)
+              }
+
+              override fun onBind(intent: Intent?): IBinder? = null
+          }
+          EOF
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Build Debug APK
+        run: gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JP-TH-Live-Sub
+          path: app/build/outputs/apk/debug/app-debug.apk
