@@ -1,4 +1,4 @@
-name: Build ViiTor Lite APK
+name: Build ViiTor Lite Offline APK
 
 on:
   workflow_dispatch:
@@ -9,12 +9,28 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate Android Project
+      - name: Generate Android Project & Download On-Device AI Models
         run: |
           mkdir -p app/src/main/java/com/example/jpthtranslator
           mkdir -p app/src/main/res/values
           mkdir -p app/src/main/res/drawable
           mkdir -p app/src/main/res/mipmap-anydpi-v26
+          mkdir -p app/src/main/assets
+          mkdir -p app/libs
+
+          # ดาวน์โหลดไลบรารี Sherpa-ONNX สำหรับ Android
+          AAR_URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.10.30/sherpa-onnx-1.10.30.aar"
+          if ! curl -L -f -o app/libs/sherpa-onnx.aar "$AAR_URL"; then
+            TAG=$(curl -s https://api.github.com/repos/k2-fsa/sherpa-onnx/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+            curl -L -f -o app/libs/sherpa-onnx.aar "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${TAG}/sherpa-onnx-${TAG}.aar"
+          fi
+
+          # ดาวน์โหลดโมเดล AI แกะเสียง SenseVoice (รองรับ ญี่ปุ่น / อังกฤษ / เกาหลี / จีน)
+          curl -L -f -o sensevoice.tar.bz2 "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
+          tar -xjf sensevoice.tar.bz2
+          cp sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx app/src/main/assets/
+          cp sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt app/src/main/assets/
+          rm -rf sensevoice.tar.bz2 sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
 
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
@@ -36,7 +52,7 @@ jobs:
                   mavenCentral()
               }
           }
-          rootProject.name = "JPTHLiveSub"
+          rootProject.name = "JPTHLiveSubOffline"
           include(":app")
           EOF
 
@@ -59,8 +75,14 @@ jobs:
                   applicationId = "com.example.jpthtranslator"
                   minSdk = 29
                   targetSdk = 34
-                  versionCode = 4
-                  versionName = "1.3"
+                  versionCode = 5
+                  versionName = "2.0-Offline"
+                  ndk {
+                      abiFilters += "arm64-v8a"
+                  }
+              }
+              androidResources {
+                  noCompress += "onnx"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -71,6 +93,8 @@ jobs:
               }
           }
           dependencies {
+              implementation(files("libs/sherpa-onnx.aar"))
+              implementation("com.google.mlkit:translate:17.0.3")
               implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
           }
           EOF
@@ -185,17 +209,31 @@ jobs:
           import android.os.Build
           import android.os.Bundle
           import android.provider.Settings
+          import android.view.View
           import android.widget.*
+          import com.google.mlkit.common.model.DownloadConditions
+          import com.google.mlkit.nl.translate.TranslateLanguage
+          import com.google.mlkit.nl.translate.Translation
+          import com.google.mlkit.nl.translate.TranslatorOptions
 
           class MainActivity : Activity() {
 
-              private lateinit var apiKeyInput: EditText
+              private lateinit var langSpinner: Spinner
               private lateinit var bilingualSwitch: Switch
               private lateinit var statusText: TextView
+              private var selectedLangCode = "ja"
+
+              private val langLabels = arrayOf(
+                  "ภาษาญี่ปุ่น (JP) → ไทย",
+                  "ภาษาอังกฤษ (EN) → ไทย",
+                  "ภาษาเกาหลี (KO) → ไทย"
+              )
+              private val langCodes = arrayOf("ja", "en", "ko")
 
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   val prefs = getSharedPreferences("sub_prefs", Context.MODE_PRIVATE)
+                  selectedLangCode = prefs.getString("src_lang", "ja") ?: "ja"
 
                   val root = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
@@ -204,7 +242,7 @@ jobs:
                   }
 
                   val title = TextView(this).apply {
-                      text = "JP → TH Live Subtitle"
+                      text = "Live Subtitle (Offline AI)"
                       textSize = 24f
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
@@ -212,34 +250,46 @@ jobs:
                   }
 
                   val desc = TextView(this).apply {
-                      text = "แปลเสียงวิดีโอจาก Chrome (ใส่หลาย API Key คั่นด้วย , ได้)"
+                      text = "ประมวลผลเสียงในตัวเครื่อง 100% ไม่ง้อ API Key และไม่จำกัดโควตา"
                       textSize = 14f
                       setTextColor(Color.parseColor("#94A3B8"))
-                      setPadding(0, 0, 0, 48)
+                      setPadding(0, 0, 0, 44)
                   }
 
-                  val inputBg = GradientDrawable().apply {
+                  val spinnerBg = GradientDrawable().apply {
                       setColor(Color.parseColor("#1E293B"))
                       cornerRadius = 24f
                       setStroke(2, Color.parseColor("#334155"))
                   }
 
-                  apiKeyInput = EditText(this).apply {
-                      hint = "วาง Gemini API Key (เช่น AIza1..., AIza2...)"
-                      setHintTextColor(Color.parseColor("#64748B"))
-                      setTextColor(Color.WHITE)
-                      setText(prefs.getString("api_key", ""))
-                      background = inputBg
-                      setPadding(36, 32, 36, 32)
-                      setSingleLine()
+                  langSpinner = Spinner(this).apply {
+                      background = spinnerBg
+                      setPadding(24, 24, 24, 24)
+                      adapter = ArrayAdapter(
+                          this@MainActivity,
+                          android.R.layout.simple_spinner_dropdown_item,
+                          langLabels
+                      ).apply {
+                          setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                      }
+                      setSelection(langCodes.indexOf(selectedLangCode).coerceAtLeast(0))
+                      onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                          override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                              (view as? TextView)?.setTextColor(Color.WHITE)
+                              selectedLangCode = langCodes[pos]
+                              prefs.edit().putString("src_lang", selectedLangCode).apply()
+                              prepareOfflineLanguagePack(selectedLangCode)
+                          }
+                          override fun onNothingSelected(parent: AdapterView<*>?) {}
+                      }
                   }
 
                   bilingualSwitch = Switch(this).apply {
-                      text = "แสดงซับญี่ปุ่นต้นฉบับคู่กับคำแปลไทย"
+                      text = "แสดงซับต้นฉบับคู่กับคำแปลไทย"
                       setTextColor(Color.WHITE)
                       textSize = 15f
                       isChecked = prefs.getBoolean("bilingual", false)
-                      setPadding(8, 40, 8, 40)
+                      setPadding(8, 44, 8, 44)
                   }
 
                   val startBtnBg = GradientDrawable().apply {
@@ -255,14 +305,9 @@ jobs:
                       background = startBtnBg
                       setPadding(0, 32, 0, 32)
                       setOnClickListener {
-                          val key = apiKeyInput.text.toString().trim()
-                          if (key.isEmpty()) {
-                              Toast.makeText(this@MainActivity, "กรุณาใส่ Gemini API Key ก่อน", Toast.LENGTH_SHORT).show()
-                              return@setOnClickListener
-                          }
                           prefs.edit()
-                              .putString("api_key", key)
                               .putBoolean("bilingual", bilingualSwitch.isChecked)
+                              .putString("src_lang", selectedLangCode)
                               .apply()
                           checkPermissionsAndStart()
                       }
@@ -280,7 +325,7 @@ jobs:
                   }
 
                   statusText = TextView(this).apply {
-                      text = "สถานะ: พร้อมใช้งาน (โหมดประหยัดโควตาอัตโนมัติ)"
+                      text = "สถานะ: กำลังตรวจสอบชุดภาษาออฟไลน์..."
                       textSize = 14f
                       setTextColor(Color.parseColor("#38BDF8"))
                       setPadding(0, 24, 0, 0)
@@ -288,12 +333,43 @@ jobs:
 
                   root.addView(title)
                   root.addView(desc)
-                  root.addView(apiKeyInput)
+                  root.addView(langSpinner)
                   root.addView(bilingualSwitch)
                   root.addView(startBtn)
                   root.addView(stopBtn)
                   root.addView(statusText)
                   setContentView(root)
+
+                  prepareOfflineLanguagePack(selectedLangCode)
+              }
+
+              private fun prepareOfflineLanguagePack(langCode: String) {
+                  statusText.text = "สถานะ: กำลังเตรียมชุดภาษาออฟไลน์ (~30MB)..."
+                  statusText.setTextColor(Color.parseColor("#FBBF24"))
+
+                  val mlSrc = when (langCode) {
+                      "en" -> TranslateLanguage.ENGLISH
+                      "ko" -> TranslateLanguage.KOREAN
+                      else -> TranslateLanguage.JAPANESE
+                  }
+                  val options = TranslatorOptions.Builder()
+                      .setSourceLanguage(mlSrc)
+                      .setTargetLanguage(TranslateLanguage.THAI)
+                      .build()
+
+                  val client = Translation.getClient(options)
+                  val conditions = DownloadConditions.Builder().build()
+                  client.downloadModelIfNeeded(conditions)
+                      .addOnSuccessListener {
+                          statusText.text = "สถานะ: พร้อมใช้งานออฟไลน์ 100% (ไม่จำกัดโควตา)"
+                          statusText.setTextColor(Color.parseColor("#34D399"))
+                          client.close()
+                      }
+                      .addOnFailureListener {
+                          statusText.text = "สถานะ: กรุณาต่อเน็ตครั้งแรกเพื่อโหลดชุดภาษา (~30MB)"
+                          statusText.setTextColor(Color.parseColor("#F87171"))
+                          client.close()
+                      }
               }
 
               private fun checkPermissionsAndStart() {
@@ -330,7 +406,7 @@ jobs:
                       val intent = Intent(this, LiveTranslateService::class.java).apply {
                           putExtra("RESULT_CODE", resultCode)
                           putExtra("DATA", data)
-                          putExtra("API_KEY", apiKeyInput.text.toString().trim())
+                          putExtra("SRC_LANG", selectedLangCode)
                           putExtra("BILINGUAL", bilingualSwitch.isChecked)
                       }
                       startForegroundService(intent)
@@ -359,20 +435,24 @@ jobs:
           import android.os.Handler
           import android.os.IBinder
           import android.os.Looper
-          import android.util.Base64
           import android.view.*
           import android.widget.LinearLayout
           import android.widget.TextView
+          import com.google.mlkit.common.model.DownloadConditions
+          import com.google.mlkit.nl.translate.TranslateLanguage
+          import com.google.mlkit.nl.translate.Translation
+          import com.google.mlkit.nl.translate.Translator
+          import com.google.mlkit.nl.translate.TranslatorOptions
+          import com.k2fsa.sherpa.onnx.FeatureConfig
+          import com.k2fsa.sherpa.onnx.OfflineModelConfig
+          import com.k2fsa.sherpa.onnx.OfflineRecognizer
+          import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+          import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
           import kotlinx.coroutines.*
           import kotlinx.coroutines.channels.BufferOverflow
           import kotlinx.coroutines.channels.Channel
-          import org.json.JSONArray
-          import org.json.JSONObject
           import java.io.ByteArrayOutputStream
-          import java.net.HttpURLConnection
-          import java.net.URL
-          import java.nio.ByteBuffer
-          import java.nio.ByteOrder
+          import kotlin.coroutines.resume
           import kotlin.math.sqrt
 
           class LiveTranslateService : Service() {
@@ -380,19 +460,18 @@ jobs:
               private lateinit var windowManager: WindowManager
               private lateinit var overlayRoot: LinearLayout
               private lateinit var statusLabel: TextView
-              private lateinit var jpTextView: TextView
+              private lateinit var srcTextView: TextView
               private lateinit var thTextView: TextView
 
               private var mediaProjection: MediaProjection? = null
               private var audioRecord: AudioRecord? = null
-              private var apiKeys: List<String> = emptyList()
-              private var currentKeyIndex = 0
+              private var recognizer: OfflineRecognizer? = null
+              private var translator: Translator? = null
+
+              private var srcLang = "ja"
               private var showBilingual = false
               private var isPaused = false
               private var fontSize = 17f
-
-              private val candidateModels = mutableListOf<String>()
-              private var currentModelIndex = 0
 
               private val mainHandler = Handler(Looper.getMainLooper())
               private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -401,8 +480,7 @@ jobs:
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                   startForegroundNotif()
                   val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: return START_NOT_STICKY
-                  val rawKey = intent.getStringExtra("API_KEY") ?: ""
-                  apiKeys = rawKey.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                  srcLang = intent.getStringExtra("SRC_LANG") ?: "ja"
                   showBilingual = intent.getBooleanExtra("BILINGUAL", false)
 
                   val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
@@ -412,7 +490,7 @@ jobs:
                       intent.getParcelableExtra("DATA")
                   }
 
-                  if (data == null || apiKeys.isEmpty()) {
+                  if (data == null) {
                       stopSelf()
                       return START_NOT_STICKY
                   }
@@ -426,7 +504,7 @@ jobs:
                       }
                   }, mainHandler)
 
-                  startTranslator()
+                  startOfflineEngine()
                   startAudioCapture()
                   return START_STICKY
               }
@@ -456,9 +534,9 @@ jobs:
                   }
 
                   statusLabel = TextView(this).apply {
-                      text = "● รอเสียงจากวิดีโอ..."
+                      text = "● กำลังโหลด AI ลงเครื่อง..."
                       textSize = 12f
-                      setTextColor(Color.parseColor("#94A3B8"))
+                      setTextColor(Color.parseColor("#FBBF24"))
                       layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                   }
 
@@ -470,7 +548,7 @@ jobs:
                       setOnClickListener {
                           fontSize = (fontSize - 2f).coerceAtLeast(12f)
                           thTextView.textSize = fontSize
-                          jpTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
+                          srcTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
                       }
                   }
 
@@ -482,7 +560,7 @@ jobs:
                       setOnClickListener {
                           fontSize = (fontSize + 2f).coerceAtMost(28f)
                           thTextView.textSize = fontSize
-                          jpTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
+                          srcTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
                       }
                   }
 
@@ -494,8 +572,8 @@ jobs:
                       setOnClickListener {
                           isPaused = !isPaused
                           text = if (isPaused) " ▶ " else " ⏸ "
-                          statusLabel.text = if (isPaused) "● หยุดแปลชั่วคราว" else "● รอเสียงจากวิดีโอ..."
-                          statusLabel.setTextColor(if (isPaused) Color.parseColor("#FBBF24") else Color.parseColor("#94A3B8"))
+                          statusLabel.text = if (isPaused) "● หยุดแปลชั่วคราว" else "● พร้อมฟัง (ออฟไลน์)"
+                          statusLabel.setTextColor(if (isPaused) Color.parseColor("#FBBF24") else Color.parseColor("#34D399"))
                       }
                   }
 
@@ -513,7 +591,7 @@ jobs:
                   topBar.addView(pauseBtn)
                   topBar.addView(closeBtn)
 
-                  jpTextView = TextView(this).apply {
+                  srcTextView = TextView(this).apply {
                       text = ""
                       textSize = fontSize - 3f
                       setTextColor(Color.parseColor("#94A3B8"))
@@ -522,14 +600,14 @@ jobs:
                   }
 
                   thTextView = TextView(this).apply {
-                      text = "เล่นวิดีโอภาษาญี่ปุ่นใน Chrome ได้เลย..."
+                      text = "เปิดวิดีโอใน Chrome ได้เลย (ออฟไลน์ 100%)..."
                       textSize = fontSize
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
                   }
 
                   overlayRoot.addView(topBar)
-                  overlayRoot.addView(jpTextView)
+                  overlayRoot.addView(srcTextView)
                   overlayRoot.addView(thTextView)
 
                   val params = WindowManager.LayoutParams(
@@ -618,8 +696,8 @@ jobs:
                               val rms = calcRms(buf, read)
                               val now = System.currentTimeMillis()
 
-                              if (rms > 130.0) {
-                                  if (!hasSpeech && now - lastUiUpdate > 400) {
+                              if (rms > 110.0) {
+                                  if (!hasSpeech && now - lastUiUpdate > 300) {
                                       updateStatus("● ได้ยินเสียง...", "#34D399")
                                       lastUiUpdate = now
                                   }
@@ -631,8 +709,8 @@ jobs:
 
                               val elapsed = now - startT
                               val silence = now - lastSpeechT
-                              // ตัดส่งทุกๆ 4.5 วินาที หรือเมื่อเงียบเกิน 0.75 วิ เพื่อประหยัดโควตาและแปลได้เต็มประโยค
-                              if (hasSpeech && ((silence > 750 && elapsed > 1500) || elapsed >= 4500)) {
+                              // ตัดประโยคไวทุกๆ 0.4 วิที่เงียบ หรือสูงสุด 2.4 วิ (ไม่จำกัดโควตา)
+                              if (hasSpeech && ((silence > 400 && elapsed > 700) || elapsed >= 2400)) {
                                   val pcm = acc.toByteArray()
                                   acc.reset()
                                   hasSpeech = false
@@ -644,71 +722,64 @@ jobs:
                   }
               }
 
-              private fun discoverFlashModels() {
-                  try {
-                      val firstKey = apiKeys.first()
-                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models?key=$firstKey")
-                      val conn = (url.openConnection() as HttpURLConnection).apply {
-                          requestMethod = "GET"
-                          connectTimeout = 5000
-                          readTimeout = 5000
-                      }
-                      if (conn.responseCode == 200) {
-                          val resp = conn.inputStream.bufferedReader().use { it.readText() }
-                          val modelsArr = JSONObject(resp).optJSONArray("models")
-                          val found = mutableListOf<String>()
-                          if (modelsArr != null) {
-                              for (i in 0 until modelsArr.length()) {
-                                  val m = modelsArr.getJSONObject(i)
-                                  val name = m.optString("name", "").removePrefix("models/")
-                                  val methods = m.optJSONArray("supportedGenerationMethods")?.toString() ?: ""
-                                  if (methods.contains("generateContent") &&
-                                      name.contains("flash", ignoreCase = true) &&
-                                      !name.contains("image", ignoreCase = true) &&
-                                      !name.contains("tts", ignoreCase = true) &&
-                                      !name.contains("embedding", ignoreCase = true) &&
-                                      !name.contains("thinking", ignoreCase = true)
-                                  ) {
-                                      found.add(name)
-                                  }
-                              }
-                          }
-                          val sorted = found.sortedWith(compareByDescending<String> { it.contains("lite") }.thenByDescending { it })
-                          candidateModels.clear()
-                          candidateModels.addAll(sorted)
-                      }
-                  } catch (_: Exception) {}
-
-                  listOf("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash").forEach { fallback ->
-                      if (!candidateModels.contains(fallback)) candidateModels.add(fallback)
-                  }
-                  currentModelIndex = 0
-              }
-
-              private fun startTranslator() {
+              private fun startOfflineEngine() {
                   scope.launch {
-                      discoverFlashModels()
+                      try {
+                          val mlSrc = when (srcLang) {
+                              "en" -> TranslateLanguage.ENGLISH
+                              "ko" -> TranslateLanguage.KOREAN
+                              else -> TranslateLanguage.JAPANESE
+                          }
+                          val mlOptions = TranslatorOptions.Builder()
+                              .setSourceLanguage(mlSrc)
+                              .setTargetLanguage(TranslateLanguage.THAI)
+                              .build()
+                          translator = Translation.getClient(mlOptions)
+                          translator?.downloadModelIfNeeded(DownloadConditions.Builder().build())
+
+                          val config = OfflineRecognizerConfig(
+                              featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
+                              modelConfig = OfflineModelConfig(
+                                  senseVoice = OfflineSenseVoiceModelConfig(
+                                      model = "model.int8.onnx",
+                                      language = srcLang,
+                                      useInverseTextNormalization = true
+                                  ),
+                                  tokens = "tokens.txt",
+                                  numThreads = 4,
+                                  debug = false
+                              )
+                          )
+                          recognizer = OfflineRecognizer(assetManager = assets, config = config)
+                          updateStatus("● พร้อมฟัง (ออฟไลน์ 100%)", "#34D399")
+                      } catch (e: Exception) {
+                          updateStatus("● โหลดโมเดลไม่สำเร็จ: ${e.message}", "#F87171")
+                          return@launch
+                      }
+
                       for (pcm in audioChannel) {
                           if (isPaused) continue
-                          updateStatus("● กำลังแปล...", "#38BDF8")
-                          val wav = pcmToWav(pcm, 16000)
-                          val res = callGeminiWithFallback(wav)
-                          if (res.startsWith("ERR:")) {
-                              updateStatus("● ${res.removePrefix("ERR:")}", "#F87171")
-                          } else if (res.isNotBlank() && !res.contains("SILENT", ignoreCase = true)) {
-                              val lines = res.lines().map { it.trim() }.filter { it.isNotEmpty() }
-                              val jp = lines.find { it.startsWith("JP:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
-                              val th = lines.find { it.startsWith("TH:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: res
+                          val rec = recognizer ?: continue
 
+                          val samples = pcmToFloatArray(pcm)
+                          val stream = rec.createStream()
+                          stream.acceptWaveform(samples, 16000)
+                          rec.decode(stream)
+                          val rawText = rec.getResult(stream).text
+                          stream.release()
+
+                          val cleanSrc = rawText.replace(Regex("<\\|[^|]+\\|>"), "").trim()
+                          if (cleanSrc.any { it.isLetterOrDigit() }) {
+                              val thText = translateOffline(cleanSrc)
                               withContext(Dispatchers.Main) {
-                                  if (showBilingual && jp.isNotEmpty()) {
-                                      jpTextView.visibility = View.VISIBLE
-                                      jpTextView.text = jp
+                                  if (showBilingual) {
+                                      srcTextView.visibility = View.VISIBLE
+                                      srcTextView.text = cleanSrc
                                   } else {
-                                      jpTextView.visibility = View.GONE
+                                      srcTextView.visibility = View.GONE
                                   }
-                                  thTextView.text = th
-                                  statusLabel.text = "● พร้อมฟังต่อ"
+                                  thTextView.text = thText
+                                  statusLabel.text = "● พร้อมฟัง (ออฟไลน์)"
                                   statusLabel.setTextColor(Color.parseColor("#34D399"))
                               }
                           } else {
@@ -718,98 +789,31 @@ jobs:
                   }
               }
 
-              private fun callGeminiWithFallback(wav: ByteArray): String {
-                  if (candidateModels.isEmpty()) discoverFlashModels()
-                  val totalCombinations = candidateModels.size * apiKeys.size
-                  var attempts = 0
-                  var lastError = ""
-
-                  while (attempts < totalCombinations) {
-                      val model = candidateModels[currentModelIndex]
-                      val key = apiKeys[currentKeyIndex]
-                      val result = callGeminiSingleModel(wav, model, key)
-
-                      if (result == "MODEL_404") {
-                          currentModelIndex = (currentModelIndex + 1) % candidateModels.size
-                          lastError = "ERR:ไม่พบโมเดล ($model)"
-                          attempts++
-                          continue
-                      }
-                      if (result == "RATE_429") {
-                          currentModelIndex = (currentModelIndex + 1) % candidateModels.size
-                          if (currentModelIndex == 0 && apiKeys.size > 1) {
-                              currentKeyIndex = (currentKeyIndex + 1) % apiKeys.size
-                          }
-                          lastError = "ERR:โควตาเต็ม รอสักครู่..."
-                          attempts++
-                          continue
-                      }
-                      return result
+              private suspend fun translateOffline(text: String): String = suspendCancellableCoroutine { cont ->
+                  val t = translator
+                  if (t == null) {
+                      cont.resume(text)
+                      return@suspendCancellableCoroutine
                   }
-                  return lastError.ifEmpty { "ERR:โควตาเต็ม รอสักครู่..." }
+                  t.translate(text)
+                      .addOnSuccessListener { result ->
+                          if (cont.isActive) cont.resume(result)
+                      }
+                      .addOnFailureListener {
+                          if (cont.isActive) cont.resume(text)
+                      }
               }
 
-              private fun callGeminiSingleModel(wav: ByteArray, modelName: String, activeKey: String): String {
-                  return try {
-                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$activeKey")
-                      val conn = (url.openConnection() as HttpURLConnection).apply {
-                          requestMethod = "POST"
-                          setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                          doOutput = true
-                          connectTimeout = 7000
-                          readTimeout = 7000
-                      }
-                      val b64 = Base64.encodeToString(wav, Base64.NO_WRAP)
-                      val prompt = if (showBilingual) {
-                          "ถอดเสียงญี่ปุ่นและแปลเป็นซับไทยสั้นกระชับ ตอบ 2 บรรทัดเท่านั้น:\nJP: <ญี่ปุ่น>\nTH: <ไทย>\nถ้าไม่มีเสียงพูดตอบ SILENT"
-                      } else {
-                          "ฟังเสียงญี่ปุ่นแล้วแปลเป็นซับไตเติลภาษาไทยสั้นๆ กระชับ เป็นธรรมชาติ ตอบเฉพาะคำแปลไทยเท่านั้น ถ้าไม่มีเสียงพูดตอบ SILENT"
-                      }
-
-                      val safety = JSONArray().apply {
-                          listOf("HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT").forEach { cat ->
-                              put(JSONObject().put("category", cat).put("threshold", "BLOCK_NONE"))
-                          }
-                      }
-
-                      val genConfig = JSONObject().apply {
-                          put("temperature", 0.2)
-                          if (modelName.contains("2.5") || modelName.contains("3")) {
-                              put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
-                          }
-                      }
-
-                      val body = JSONObject().apply {
-                          put("contents", JSONArray().put(JSONObject().apply {
-                              put("parts", JSONArray().apply {
-                                  put(JSONObject().put("text", prompt))
-                                  put(JSONObject().put("inline_data", JSONObject().apply {
-                                      put("mime_type", "audio/wav")
-                                      put("data", b64)
-                                  }))
-                              })
-                          }))
-                          put("safetySettings", safety)
-                          put("generationConfig", genConfig)
-                      }
-
-                      conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
-
-                      when (conn.responseCode) {
-                          200 -> {
-                              val text = conn.inputStream.bufferedReader().use { it.readText() }
-                              val candidate = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)
-                              val partText = candidate?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "") ?: ""
-                              partText.trim()
-                          }
-                          404 -> "MODEL_404"
-                          429 -> "RATE_429"
-                          400, 403 -> "ERR:API Key ไม่ถูกต้อง (${conn.responseCode})"
-                          else -> "ERR:เซิร์ฟเวอร์ (${conn.responseCode})"
-                      }
-                  } catch (e: Exception) {
-                      "ERR:เน็ตช้า/หมดเวลา"
+              private fun pcmToFloatArray(pcm: ByteArray): FloatArray {
+                  val count = pcm.size / 2
+                  val floats = FloatArray(count)
+                  for (i in 0 until count) {
+                      val lo = pcm[i * 2].toInt() and 0xFF
+                      val hi = pcm[i * 2 + 1].toInt()
+                      val sample = ((hi shl 8) or lo).toShort()
+                      floats[i] = sample / 32768.0f
                   }
+                  return floats
               }
 
               private fun calcRms(buf: ByteArray, len: Int): Double {
@@ -823,24 +827,13 @@ jobs:
                   return sqrt(sum / count)
               }
 
-              private fun pcmToWav(pcm: ByteArray, sr: Int): ByteArray {
-                  val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN).apply {
-                      put("RIFF".toByteArray()); putInt(pcm.size + 36)
-                      put("WAVE".toByteArray()); put("fmt ".toByteArray())
-                      putInt(16); putShort(1); putShort(1); putInt(sr)
-                      putInt(sr * 2); putShort(2); putShort(16)
-                      put("data".toByteArray()); putInt(pcm.size)
-                  }.array()
-                  return header + pcm
-              }
-
               private fun startForegroundNotif() {
                   val id = "jp_th_sub_channel"
                   getSystemService(NotificationManager::class.java).createNotificationChannel(
                       NotificationChannel(id, "JP-TH Live Sub", NotificationManager.IMPORTANCE_LOW)
                   )
                   val notif = Notification.Builder(this, id)
-                      .setContentTitle("JP-TH Live Subtitle กำลังทำงาน")
+                      .setContentTitle("Live Subtitle (Offline AI) กำลังทำงาน")
                       .setSmallIcon(R.drawable.ic_launcher_foreground)
                       .build()
                   if (Build.VERSION.SDK_INT >= 29) {
@@ -855,6 +848,8 @@ jobs:
                   scope.cancel()
                   audioChannel.close()
                   try { audioRecord?.stop(); audioRecord?.release() } catch (_: Exception) {}
+                  try { recognizer?.release() } catch (_: Exception) {}
+                  try { translator?.close() } catch (_: Exception) {}
                   if (::overlayRoot.isInitialized) windowManager.removeView(overlayRoot)
               }
 
