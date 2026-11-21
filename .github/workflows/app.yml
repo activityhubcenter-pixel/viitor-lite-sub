@@ -439,6 +439,7 @@ jobs:
           import android.content.pm.ServiceInfo
           import android.graphics.*
           import android.graphics.drawable.GradientDrawable
+          import android.graphics.drawable.Icon
           import android.media.*
           import android.media.projection.MediaProjection
           import android.media.projection.MediaProjectionManager
@@ -857,32 +858,35 @@ jobs:
 
                   var ix = 0; var iy = 0; var tx = 0f; var ty = 0f
                   val dragAndTapListener = View.OnTouchListener { _, e ->
-                      if (isLocked) return@OnTouchListener false
-                      when (e.action) {
-                          MotionEvent.ACTION_DOWN -> {
-                              ix = overlayParams.x
-                              iy = overlayParams.y
-                              tx = e.rawX
-                              ty = e.rawY
-                              true
-                          }
-                          MotionEvent.ACTION_MOVE -> {
-                              val dx = (e.rawX - tx).toInt()
-                              val dy = (e.rawY - ty).toInt()
-                              if (abs(dx) > 12 || abs(dy) > 12) {
-                                  val curSw = resources.displayMetrics.widthPixels
-                                  val curSh = resources.displayMetrics.heightPixels
-                                  overlayParams.x = (ix + dx).coerceIn(0, (curSw - 120).coerceAtLeast(0))
-                                  overlayParams.y = (iy + dy).coerceIn(0, (curSh - 80).coerceAtLeast(0))
-                                  windowManager.updateViewLayout(overlayRoot, overlayParams)
+                      if (isLocked) {
+                          false
+                      } else {
+                          when (e.action) {
+                              MotionEvent.ACTION_DOWN -> {
+                                  ix = overlayParams.x
+                                  iy = overlayParams.y
+                                  tx = e.rawX
+                                  ty = e.rawY
+                                  true
                               }
-                              true
+                              MotionEvent.ACTION_MOVE -> {
+                                  val dx = (e.rawX - tx).toInt()
+                                  val dy = (e.rawY - ty).toInt()
+                                  if (abs(dx) > 12 || abs(dy) > 12) {
+                                      val curSw = resources.displayMetrics.widthPixels
+                                      val curSh = resources.displayMetrics.heightPixels
+                                      overlayParams.x = (ix + dx).coerceIn(0, (curSw - 120).coerceAtLeast(0))
+                                      overlayParams.y = (iy + dy).coerceIn(0, (curSh - 80).coerceAtLeast(0))
+                                      windowManager.updateViewLayout(overlayRoot, overlayParams)
+                                  }
+                                  true
+                              }
+                              MotionEvent.ACTION_UP -> {
+                                  revealMenuAndScheduleHide()
+                                  true
+                              }
+                              else -> false
                           }
-                          MotionEvent.ACTION_UP -> {
-                              revealMenuAndScheduleHide()
-                              true
-                          }
-                          else -> false
                       }
                   }
 
@@ -894,34 +898,37 @@ jobs:
 
                   var startW = 0; var startH = 0; var rtx = 0f; var rty = 0f
                   resizeHandle.setOnTouchListener { v, e ->
-                      if (isLocked) return@OnTouchListener false
-                      when (e.action) {
-                          MotionEvent.ACTION_DOWN -> {
-                              v.parent?.requestDisallowInterceptTouchEvent(true)
-                              startW = overlayRoot.width
-                              startH = overlayRoot.height
-                              rtx = e.rawX
-                              rty = e.rawY
-                              mainHandler.removeCallbacks(autoHideMenuRunnable)
-                              true
+                      if (isLocked) {
+                          false
+                      } else {
+                          when (e.action) {
+                              MotionEvent.ACTION_DOWN -> {
+                                  v.parent?.requestDisallowInterceptTouchEvent(true)
+                                  startW = overlayRoot.width
+                                  startH = overlayRoot.height
+                                  rtx = e.rawX
+                                  rty = e.rawY
+                                  mainHandler.removeCallbacks(autoHideMenuRunnable)
+                                  true
+                              }
+                              MotionEvent.ACTION_MOVE -> {
+                                  val curSw = resources.displayMetrics.widthPixels
+                                  val curSh = resources.displayMetrics.heightPixels
+                                  val maxAllowedW = (curSw - overlayParams.x).coerceAtLeast(320)
+                                  val maxAllowedH = (curSh - overlayParams.y).coerceAtLeast(140)
+                                  val newW = (startW + (e.rawX - rtx).toInt()).coerceIn(280, maxAllowedW)
+                                  val newH = (startH + (e.rawY - rty).toInt()).coerceIn(130, maxAllowedH)
+                                  overlayParams.width = newW
+                                  overlayParams.height = newH
+                                  windowManager.updateViewLayout(overlayRoot, overlayParams)
+                                  true
+                              }
+                              MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                                  revealMenuAndScheduleHide()
+                                  true
+                              }
+                              else -> false
                           }
-                          MotionEvent.ACTION_MOVE -> {
-                              val curSw = resources.displayMetrics.widthPixels
-                              val curSh = resources.displayMetrics.heightPixels
-                              val maxAllowedW = (curSw - overlayParams.x).coerceAtLeast(320)
-                              val maxAllowedH = (curSh - overlayParams.y).coerceAtLeast(140)
-                              val newW = (startW + (e.rawX - rtx).toInt()).coerceIn(280, maxAllowedW)
-                              val newH = (startH + (e.rawY - rty).toInt()).coerceIn(130, maxAllowedH)
-                              overlayParams.width = newW
-                              overlayParams.height = newH
-                              windowManager.updateViewLayout(overlayRoot, overlayParams)
-                              true
-                          }
-                          MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                              revealMenuAndScheduleHide()
-                              true
-                          }
-                          else -> false
                       }
                   }
 
@@ -938,7 +945,6 @@ jobs:
                   }
               }
 
-              // ตัวกรองเสียงพูดมนุษย์ด้วย Kotlin (วิเคราะห์ความดัง RMS ร่วมกับอัตราตัดศูนย์ ZCR ของเสียงพูด)
               private fun isHumanSpeechFrame(buf: ByteArray, len: Int): Boolean {
                   val count = len / 2
                   if (count < 2) return false
@@ -957,7 +963,6 @@ jobs:
                   }
                   val rms = sqrt(sumSq / count)
                   val zcr = zeroCrossings.toDouble() / count
-                  // เสียงพูดมนุษย์ที่ 16kHz มีความดัง > 135 และอัตราตัดศูนย์อยู่ในช่วง 0.02 - 0.38 (ตัดเสียงฮัมต่ำและเสียงซ่าความถี่สูง)
                   return rms > 135.0 && zcr in 0.02..0.38
               }
 
@@ -1094,7 +1099,6 @@ jobs:
                           val rawText = rec.getResult(stream).text
                           stream.release()
 
-                          // ตัดแท็กเสียงดนตรี/เสียงประกอบ <|BGM|> <|NOSPEECH|> ของ SenseVoice ออก
                           val cleanSrc = rawText.replace(Regex("<\\|[^|]+\\|>"), "").trim()
                           if (cleanSrc.any { it.isLetterOrDigit() }) {
                               val historySnapshot = synchronized(contextHistory) { ArrayList(contextHistory) }
@@ -1222,6 +1226,7 @@ jobs:
                       "กำลังแปลซับลอยจอ • แตะที่นี่เพื่อเรียกแถบเมนู"
                   }
 
+                  val actionIcon = Icon.createWithResource(this, R.drawable.ic_launcher_foreground)
                   val notif = Notification.Builder(this, NOTIF_CHANNEL_ID)
                       .setContentTitle("Live Subtitle v1.0")
                       .setContentText(contentText)
@@ -1229,7 +1234,7 @@ jobs:
                       .setContentIntent(unlockPi)
                       .addAction(
                           Notification.Action.Builder(
-                              null,
+                              actionIcon,
                               if (isLocked) "ปลดล็อกกล่องซับ" else "แสดงเมนูซับ",
                               unlockPi
                           ).build()
@@ -1861,7 +1866,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Release v1.0 fixed Kotlin speech filter and iOS Safari PiP [skip ci]" || true
+          git commit -m "Release v1.0 fix touch listener compile error [skip ci]" || true
           git push || true
 
       - name: Set up JDK 17
@@ -1876,7 +1881,7 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build Debug APK
-        run: gradle assembleDebug
+        run: gradle assembleDebug --console=plain
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
