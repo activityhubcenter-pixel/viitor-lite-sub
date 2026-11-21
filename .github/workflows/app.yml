@@ -56,8 +56,8 @@ jobs:
                   applicationId = "com.example.jpthtranslator"
                   minSdk = 29
                   targetSdk = 34
-                  versionCode = 1
-                  versionName = "1.0"
+                  versionCode = 2
+                  versionName = "1.1"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -138,8 +138,8 @@ jobs:
                   }
 
                   val title = TextView(this).apply {
-                      text = "JP → TH Live Subtitle"
-                      textSize = 24f
+                      text = "JP → TH Live Subtitle (Fast)"
+                      textSize = 23f
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
                       setPadding(0, 0, 0, 12)
@@ -172,7 +172,7 @@ jobs:
                       text = "แสดงซับญี่ปุ่นต้นฉบับคู่กับคำแปลไทย"
                       setTextColor(Color.WHITE)
                       textSize = 15f
-                      isChecked = prefs.getBoolean("bilingual", true)
+                      isChecked = prefs.getBoolean("bilingual", false)
                       setPadding(8, 40, 8, 40)
                   }
 
@@ -214,7 +214,7 @@ jobs:
                   }
 
                   statusText = TextView(this).apply {
-                      text = "สถานะ: พร้อมใช้งาน"
+                      text = "สถานะ: พร้อมใช้งาน (แนะนำเลือกแชร์ 'ทั้งหน้าจอ')"
                       textSize = 14f
                       setTextColor(Color.parseColor("#60A5FA"))
                       setPadding(0, 24, 0, 0)
@@ -290,7 +290,9 @@ jobs:
           import android.media.projection.MediaProjection
           import android.media.projection.MediaProjectionManager
           import android.os.Build
+          import android.os.Handler
           import android.os.IBinder
+          import android.os.Looper
           import android.util.Base64
           import android.view.*
           import android.widget.LinearLayout
@@ -318,18 +320,19 @@ jobs:
               private var mediaProjection: MediaProjection? = null
               private var audioRecord: AudioRecord? = null
               private var apiKey = ""
-              private var showBilingual = true
+              private var showBilingual = false
               private var isPaused = false
               private var fontSize = 17f
 
+              private val mainHandler = Handler(Looper.getMainLooper())
               private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-              private val audioChannel = Channel<ByteArray>(capacity = 2, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+              private val audioChannel = Channel<ByteArray>(capacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                   startForegroundNotif()
                   val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: return START_NOT_STICKY
                   apiKey = intent.getStringExtra("API_KEY") ?: ""
-                  showBilingual = intent.getBooleanExtra("BILINGUAL", true)
+                  showBilingual = intent.getBooleanExtra("BILINGUAL", false)
 
                   val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
                       intent.getParcelableExtra("DATA", Intent::class.java)
@@ -346,6 +349,11 @@ jobs:
                   setupOverlay()
                   val mgr = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
                   mediaProjection = mgr.getMediaProjection(resultCode, data)
+                  mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                      override fun onStop() {
+                          stopSelf()
+                      }
+                  }, mainHandler)
 
                   startTranslator()
                   startAudioCapture()
@@ -367,19 +375,19 @@ jobs:
                   overlayRoot = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       background = bg
-                      setPadding(32, 20, 32, 24)
+                      setPadding(32, 18, 32, 22)
                   }
 
                   val topBar = LinearLayout(this).apply {
                       orientation = LinearLayout.HORIZONTAL
                       gravity = Gravity.CENTER_VERTICAL
-                      setPadding(0, 0, 0, 10)
+                      setPadding(0, 0, 0, 8)
                   }
 
                   statusLabel = TextView(this).apply {
-                      text = "● กำลังฟังเสียง (ลากย้ายได้)"
+                      text = "● รอเสียงจากวิดีโอ..."
                       textSize = 12f
-                      setTextColor(Color.parseColor("#34D399"))
+                      setTextColor(Color.parseColor("#9CA3AF"))
                       layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                   }
 
@@ -415,8 +423,8 @@ jobs:
                       setOnClickListener {
                           isPaused = !isPaused
                           text = if (isPaused) " ▶ " else " ⏸ "
-                          statusLabel.text = if (isPaused) "● หยุดแปลชั่วคราว" else "● กำลังฟังเสียง"
-                          statusLabel.setTextColor(if (isPaused) Color.parseColor("#FBBF24") else Color.parseColor("#34D399"))
+                          statusLabel.text = if (isPaused) "● หยุดแปลชั่วคราว" else "● รอเสียงจากวิดีโอ..."
+                          statusLabel.setTextColor(if (isPaused) Color.parseColor("#FBBF24") else Color.parseColor("#9CA3AF"))
                       }
                   }
 
@@ -438,12 +446,12 @@ jobs:
                       text = ""
                       textSize = fontSize - 3f
                       setTextColor(Color.parseColor("#9CA3AF"))
-                      visibility = if (showBilingual) View.VISIBLE else View.GONE
+                      visibility = View.GONE
                       setPadding(0, 0, 0, 6)
                   }
 
                   thTextView = TextView(this).apply {
-                      text = "เปิดวิดีโอภาษาญี่ปุ่นใน Chrome ได้เลย..."
+                      text = "เร่งเสียงสื่อเกิน 50% แล้วเล่นวิดีโอได้เลย"
                       textSize = fontSize
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
@@ -481,6 +489,15 @@ jobs:
                   windowManager.addView(overlayRoot, params)
               }
 
+              private fun updateStatus(text: String, colorHex: String) {
+                  mainHandler.post {
+                      if (!isPaused) {
+                          statusLabel.text = text
+                          statusLabel.setTextColor(Color.parseColor(colorHex))
+                      }
+                  }
+              }
+
               @SuppressLint("MissingPermission")
               private fun startAudioCapture() {
                   val proj = mediaProjection ?: return
@@ -504,14 +521,20 @@ jobs:
                       .setBufferSizeInBytes(minBuf * 2)
                       .build()
 
+                  if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                      updateStatus("● ดักเสียงไม่ได้ (ลองเลือกแชร์ทั้งหน้าจอ)", "#F87171")
+                      return
+                  }
+
                   audioRecord?.startRecording()
 
                   scope.launch {
-                      val buf = ByteArray(minBuf)
+                      val buf = ByteArray(1024)
                       val acc = ByteArrayOutputStream()
                       var startT = System.currentTimeMillis()
                       var lastSpeechT = 0L
                       var hasSpeech = false
+                      var lastUiUpdate = 0L
 
                       while (isActive) {
                           val read = audioRecord?.read(buf, 0, buf.size) ?: 0
@@ -523,15 +546,21 @@ jobs:
                           if (read > 0) {
                               val rms = calcRms(buf, read)
                               val now = System.currentTimeMillis()
-                              if (rms > 220.0) {
+
+                              if (rms > 75.0) {
+                                  if (!hasSpeech && now - lastUiUpdate > 300) {
+                                      updateStatus("● ได้ยินเสียง...", "#34D399")
+                                      lastUiUpdate = now
+                                  }
                                   hasSpeech = true
                                   lastSpeechT = now
                               }
+
                               if (hasSpeech) acc.write(buf, 0, read) else startT = now
 
                               val elapsed = now - startT
                               val silence = now - lastSpeechT
-                              if (hasSpeech && ((silence > 650 && elapsed > 1100) || elapsed >= 3800)) {
+                              if (hasSpeech && ((silence > 450 && elapsed > 850) || elapsed >= 2300)) {
                                   val pcm = acc.toByteArray()
                                   acc.reset()
                                   hasSpeech = false
@@ -547,9 +576,12 @@ jobs:
                   scope.launch {
                       for (pcm in audioChannel) {
                           if (isPaused) continue
+                          updateStatus("● กำลังแปล...", "#60A5FA")
                           val wav = pcmToWav(pcm, 16000)
                           val res = callGemini(wav)
-                          if (res.isNotBlank() && !res.contains("SILENT", ignoreCase = true)) {
+                          if (res.startsWith("ERR:")) {
+                              updateStatus("● ${res.removePrefix("ERR:")}", "#F87171")
+                          } else if (res.isNotBlank() && !res.contains("SILENT", ignoreCase = true)) {
                               val lines = res.lines().map { it.trim() }.filter { it.isNotEmpty() }
                               val jp = lines.find { it.startsWith("JP:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: ""
                               val th = lines.find { it.startsWith("TH:", ignoreCase = true) }?.substringAfter(":")?.trim() ?: res
@@ -562,7 +594,11 @@ jobs:
                                       jpTextView.visibility = View.GONE
                                   }
                                   thTextView.text = th
+                                  statusLabel.text = "● พร้อมฟังต่อ"
+                                  statusLabel.setTextColor(Color.parseColor("#34D399"))
                               }
+                          } else {
+                              updateStatus("● รอเสียงพูด...", "#9CA3AF")
                           }
                       }
                   }
@@ -575,14 +611,26 @@ jobs:
                           requestMethod = "POST"
                           setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                           doOutput = true
-                          connectTimeout = 8000
-                          readTimeout = 8000
+                          connectTimeout = 6000
+                          readTimeout = 6000
                       }
                       val b64 = Base64.encodeToString(wav, Base64.NO_WRAP)
-                      val prompt = "ฟังเสียงภาษาญี่ปุ่นในไฟล์นี้ แล้วตอบกลับ 2 บรรทัดตามรูปแบบนี้เท่านั้น:\n" +
-                              "JP: <ถอดเสียงภาษาญี่ปุ่นที่ได้ยิน>\n" +
-                              "TH: <แปลเป็นซับไตเติลภาษาไทยที่เป็นธรรมชาติและกระชับ>\n" +
-                              "หากไม่มีเสียงพูดภาษาญี่ปุ่นหรือมีแต่เสียงดนตรี ให้ตอบคำเดียวว่า SILENT"
+                      val prompt = if (showBilingual) {
+                          "ถอดเสียงญี่ปุ่นและแปลเป็นซับไทยสั้นกระชับ ตอบ 2 บรรทัดเท่านั้น:\nJP: <ญี่ปุ่น>\nTH: <ไทย>\nถ้าไม่มีเสียงพูดตอบ SILENT"
+                      } else {
+                          "ฟังเสียงญี่ปุ่นแล้วแปลเป็นซับไตเติลภาษาไทยสั้นๆ กระชับ เป็นธรรมชาติ ตอบเฉพาะคำแปลไทยเท่านั้น ถ้าไม่มีเสียงพูดตอบ SILENT"
+                      }
+
+                      val safety = JSONArray().apply {
+                          listOf("HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH", "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT").forEach { cat ->
+                              put(JSONObject().put("category", cat).put("threshold", "BLOCK_NONE"))
+                          }
+                      }
+
+                      val genConfig = JSONObject().apply {
+                          put("temperature", 0.2)
+                          put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+                      }
 
                       val body = JSONObject().apply {
                           put("contents", JSONArray().put(JSONObject().apply {
@@ -594,20 +642,27 @@ jobs:
                                   }))
                               })
                           }))
-                          put("generationConfig", JSONObject().put("temperature", 0.2))
+                          put("safetySettings", safety)
+                          put("generationConfig", genConfig)
                       }
 
                       conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
 
                       if (conn.responseCode == 200) {
                           val text = conn.inputStream.bufferedReader().use { it.readText() }
-                          JSONObject(text).getJSONArray("candidates").getJSONObject(0)
-                              .getJSONObject("content").getJSONArray("parts").getJSONObject(0)
-                              .getString("text").trim()
+                          val candidate = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)
+                          val partText = candidate?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "") ?: ""
+                          partText.trim()
                       } else if (conn.responseCode == 429) {
-                          "TH: (โควตาแปลเต็มชั่วคราว รอสักครู่...)"
-                      } else ""
-                  } catch (_: Exception) { "" }
+                          "ERR:โควตาเต็ม รอ 1 นาที"
+                      } else if (conn.responseCode == 400 || conn.responseCode == 403) {
+                          "ERR:API Key ไม่ถูกต้อง (${conn.responseCode})"
+                      } else {
+                          "ERR:เซิร์ฟเวอร์ (${conn.responseCode})"
+                      }
+                  } catch (e: Exception) {
+                      "ERR:เน็ตช้า/หมดเวลา"
+                  }
               }
 
               private fun calcRms(buf: ByteArray, len: Int): Double {
