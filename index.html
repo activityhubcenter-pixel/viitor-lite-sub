@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <title>Live Subtitle v1.0 (iOS & Desktop)</title>
+  <title>Live Subtitle</title>
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --primary: #2563eb; }
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -59,7 +59,6 @@
       background: rgba(6, 11, 22, 0.95); color: #38bdf8; border: 1px solid #38bdf8;
       border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700;
     }
-    .note { font-size: 12px; color: #94a3b8; margin-top: 10px; line-height: 1.5; }
     #pipVideo {
       position: fixed; right: 2px; bottom: 2px; width: 2px; height: 2px;
       opacity: 0.01; pointer-events: none; z-index: -1;
@@ -68,8 +67,8 @@
 </head>
 <body>
   <div class="container">
-    <h1>Live Subtitle v1.0 (iOS / iPad / PC)</h1>
-    <p class="sub">รองรับหน้าต่างลอย PiP บน Safari • ซ่อนเมนูอัตโนมัติใน 5 วินาที</p>
+    <h1>Live Subtitle</h1>
+    <p class="sub">ซับไตเติลแปลสดพร้อมหน้าต่างลอย (PiP) • ซ่อนเมนูอัตโนมัติใน 5 วินาที</p>
 
     <div class="panel" id="controlPanel">
       <div class="row">
@@ -84,7 +83,7 @@
       </div>
 
       <div class="row">
-        <input type="text" id="groqKey" placeholder="Groq API Key (แนะนำสำหรับ iOS - ช่วยแกะเสียงและแปลตามบริบทแม่นยำ)" />
+        <input type="text" id="groqKey" placeholder="Groq API Key (ไม่บังคับ - ช่วยแปลตามบริบทสำนวนธรรมชาติ)" />
       </div>
 
       <div class="row" style="justify-content: space-between; margin-bottom: 0;">
@@ -104,13 +103,9 @@
       <div id="status" class="outline-text">● พร้อมใช้งาน (กด "เริ่มฟังและแปลสด")</div>
       <div id="srcText" class="outline-text"></div>
       <div id="prevTh" class="outline-text"></div>
-      <div id="thText" class="outline-text">เปิดผ่าน Safari บน iPhone/iPad กดเริ่มฟัง แล้วกด "หน้าต่างลอย (PiP)" ได้เลย</div>
+      <div id="thText" class="outline-text">กดปุ่ม "เริ่มฟังและแปลสด" เพื่อเริ่มใช้งาน</div>
       <div id="webResizeHandle">⤢ ขยาย</div>
     </div>
-
-    <p class="note">
-      <b>คำแนะนำสำหรับ iPhone / iPad:</b> ต้องเปิดลิงก์นี้ผ่านแอป <b>Safari</b> เท่านั้นจึงจะกดปุ่ม <b>หน้าต่างลอย (PiP)</b> ลอยข้ามแอปได้ (หากใส่ Groq API Key ระบบจะใช้ AI Whisper แกะเสียงซึ่งแม่นยำและเสถียรกว่าไมค์ปกติของ iOS มาก)
-    </p>
   </div>
 
   <button id="floatingUnlockBtn" onclick="toggleWebLock()">🔒 ปลดล็อกกล่องซับ</button>
@@ -132,9 +127,6 @@
     let pipInterval = null;
     let lastTranslatedSrc = "";
     let hideMenuTimer = null;
-    let mediaStream = null;
-    let audioCtx = null;
-    let analyser = null;
     const contextHistory = [];
 
     const groqInput = document.getElementById('groqKey');
@@ -299,165 +291,29 @@
       drawPiPCanvas();
     }
 
-    function stopAllListening() {
-      isListening = false;
-      clearTimeout(restartTimer);
-      if (recognition) {
-        try { recognition.onend = null; recognition.stop(); } catch (_) {}
-        recognition = null;
-      }
-      if (mediaStream) {
-        mediaStream.getTracks().forEach(t => t.stop());
-        mediaStream = null;
-      }
-      if (audioCtx) {
-        try { audioCtx.close(); } catch (_) {}
-        audioCtx = null;
-      }
-      document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
-      document.getElementById('startBtn').classList.remove('stop');
-      setStatus('● หยุดฟังแล้ว', '#94a3b8');
-      revealWebMenu();
-    }
-
-    async function toggleListen() {
-      if (isListening) {
-        stopAllListening();
-        return;
-      }
-
-      const key = groqInput.value.trim();
+    function toggleListen() {
       const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-      if (key && (isIOS || !SpeechRec)) {
-        await startGroqWhisperLoop(key);
-        return;
-      }
-
       if (!SpeechRec) {
-        alert('เบราว์เซอร์นี้ไม่รองรับการถอดเสียงอัตโนมัติ กรุณาเปิดผ่าน Safari บน iOS หรือวาง Groq API Key ด้านบนเพื่อใช้งานได้ทุกเบราว์เซอร์');
+        alert('เบราว์เซอร์นี้ไม่รองรับการถอดเสียง กรุณาเปิดด้วย Google Chrome หรือ Edge');
         return;
       }
-
-      startBrowserSpeechRec(SpeechRec);
-    }
-
-    async function startGroqWhisperLoop(key) {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert('เบราว์เซอร์ไม่อนุญาตให้เข้าถึงไมโครโฟน กรุณาเปิดผ่าน Safari');
-        return;
-      }
-
-      try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true }
-        });
-      } catch (err) {
-        setStatus('● ไม่ได้รับอนุญาตใช้ไมโครโฟน (กรุณากดอนุญาตใน Safari)', '#f87171');
-        return;
-      }
-
-      isListening = true;
-      document.getElementById('startBtn').textContent = 'หยุดการฟัง';
-      document.getElementById('startBtn').classList.add('stop');
-      setStatus('● กำลังฟังด้วย AI Whisper (iOS Ready)...', '#34d399');
-      revealWebMenu();
-
-      try {
-        const AudioContextCls = window.AudioContext || window.webkitAudioContext;
-        audioCtx = new AudioContextCls();
-        const srcNode = audioCtx.createMediaStreamSource(mediaStream);
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 512;
-        srcNode.connect(analyser);
-      } catch (_) {}
-
-      const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm'))
-        ? 'audio/webm'
-        : (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
-
-      while (isListening && mediaStream) {
-        const blob = await recordOneChunk(mediaStream, mimeType, 2800);
-        if (!isListening || !blob || blob.size < 1200) continue;
-
-        transcribeAndTranslateBlob(blob, mimeType, key);
-      }
-    }
-
-    function recordOneChunk(stream, mimeType, durationMs) {
-      return new Promise(resolve => {
-        try {
-          const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-          const chunks = [];
-          let hadSound = false;
-
-          const checkTimer = setInterval(() => {
-            if (!analyser) { hadSound = true; return; }
-            const data = new Uint8Array(analyser.frequencyBinCount);
-            analyser.getByteTimeDomainData(data);
-            let sum = 0;
-            for (let i = 0; i < data.length; i++) {
-              const v = (data[i] - 128) / 128;
-              sum += v * v;
-            }
-            const rms = Math.sqrt(sum / data.length);
-            if (rms > 0.012) hadSound = true;
-          }, 120);
-
-          recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
-          recorder.onstop = () => {
-            clearInterval(checkTimer);
-            if (!hadSound) {
-              resolve(null);
-            } else {
-              resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/mp4' }));
-            }
-          };
-
-          recorder.start();
-          setTimeout(() => {
-            if (recorder.state !== 'inactive') {
-              try { recorder.stop(); } catch (_) { resolve(null); }
-            }
-          }, durationMs);
-        } catch (e) {
-          setTimeout(() => resolve(null), 500);
+      if (isListening) {
+        isListening = false;
+        clearTimeout(restartTimer);
+        if (recognition) {
+          try { recognition.onend = null; recognition.stop(); } catch (_) {}
         }
-      });
-    }
+        document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
+        document.getElementById('startBtn').classList.remove('stop');
+        setStatus('● หยุดฟังแล้ว', '#94a3b8');
+        revealWebMenu();
+        return;
+      }
 
-    async function transcribeAndTranslateBlob(blob, mimeType, key) {
-      try {
-        const langCode = document.getElementById('langSelect').value.split('-')[0];
-        const ext = (mimeType && mimeType.includes('webm')) ? 'webm' : 'mp4';
-        const form = new FormData();
-        form.append('file', blob, `audio.${ext}`);
-        form.append('model', 'whisper-large-v3-turbo');
-        form.append('language', langCode);
-        form.append('response_format', 'json');
-
-        const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${key}` },
-          body: form
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-        const text = (data.text || '').trim();
-        if (!text || text.length < 2) return;
-
-        currentSrc = text;
-        document.getElementById('srcText').textContent = document.getElementById('showOrig').checked ? text : '';
-        drawPiPCanvas();
-        await translateText(text);
-      } catch (_) {}
-    }
-
-    function startBrowserSpeechRec(SpeechRec) {
       isListening = true;
       document.getElementById('startBtn').textContent = 'หยุดการฟัง';
       document.getElementById('startBtn').classList.add('stop');
-      setStatus('● กำลังขอสิทธิ์ไมโครโฟน...', '#fbbf24');
+      setStatus('● กำลังฟังเสียงสด...', '#34d399');
       revealWebMenu();
 
       const launchRec = () => {
@@ -466,10 +322,6 @@
         recognition.lang = document.getElementById('langSelect').value;
         recognition.continuous = !isIOS;
         recognition.interimResults = true;
-
-        recognition.onstart = () => {
-          setStatus('● กำลังฟังเสียงสด...', '#34d399');
-        };
 
         recognition.onresult = (event) => {
           let transcript = '';
@@ -488,27 +340,14 @@
           translateTimer = setTimeout(() => translateText(transcript), isFinal ? 80 : 600);
         };
 
-        recognition.onerror = (e) => {
-          if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-            setStatus('● ถูกบล็อกไมโครโฟน (เปิดการป้อนตามคำบอกในตั้งค่า iOS หรือใส่ Groq Key)', '#f87171');
-            isListening = false;
-            document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
-            document.getElementById('startBtn').classList.remove('stop');
-          }
-        };
-
         recognition.onend = () => {
           if (isListening) {
             clearTimeout(restartTimer);
-            restartTimer = setTimeout(launchRec, isIOS ? 150 : 50);
+            restartTimer = setTimeout(launchRec, 80);
           }
         };
 
-        try {
-          recognition.start();
-        } catch (_) {
-          restartTimer = setTimeout(launchRec, 300);
-        }
+        try { recognition.start(); } catch (_) { restartTimer = setTimeout(launchRec, 250); }
       };
 
       launchRec();
@@ -584,11 +423,9 @@
           await document.exitPictureInPicture();
         } else if (video.requestPictureInPicture) {
           await video.requestPictureInPicture();
-        } else {
-          throw new Error('PiP unsupported');
         }
       } catch (e) {
-        alert('ไม่สามารถเปิดหน้าต่างลอยได้ กรุณาตรวจสอบว่าเปิดหน้าเว็บนี้ผ่านแอป "Safari" บน iPhone/iPad (Chrome บน iOS ไม่รองรับ PiP)');
+        alert('เบราว์เซอร์นี้ไม่รองรับหน้าต่างลอย (PiP)');
       }
     }
   </script>
