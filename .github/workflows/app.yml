@@ -38,9 +38,6 @@ jobs:
           cp sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/tokens.txt app/src/main/assets/
           rm -rf sensevoice.tar.bz2 sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
 
-          # ดาวน์โหลดโมเดล Silero VAD สำหรับคัดกรองเฉพาะเสียงพูดมนุษย์
-          curl -L -f -o app/src/main/assets/silero_vad.onnx "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx"
-
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
           kotlin.code.style=official
@@ -459,16 +456,22 @@ jobs:
           import com.google.mlkit.nl.translate.Translation
           import com.google.mlkit.nl.translate.Translator
           import com.google.mlkit.nl.translate.TranslatorOptions
-          import com.k2fsa.sherpa.onnx.*
+          import com.k2fsa.sherpa.onnx.FeatureConfig
+          import com.k2fsa.sherpa.onnx.OfflineModelConfig
+          import com.k2fsa.sherpa.onnx.OfflineRecognizer
+          import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+          import com.k2fsa.sherpa.onnx.OfflineSenseVoiceModelConfig
           import kotlinx.coroutines.*
           import kotlinx.coroutines.channels.BufferOverflow
           import kotlinx.coroutines.channels.Channel
           import org.json.JSONArray
           import org.json.JSONObject
+          import java.io.ByteArrayOutputStream
           import java.net.HttpURLConnection
           import java.net.URL
           import kotlin.coroutines.resume
           import kotlin.math.abs
+          import kotlin.math.sqrt
 
           class OutlineTextView(context: Context) : TextView(context) {
               var strokeColor: Int = Color.argb(240, 0, 0, 0)
@@ -522,7 +525,6 @@ jobs:
               private var mediaProjection: MediaProjection? = null
               private var audioRecord: AudioRecord? = null
               private var recognizer: OfflineRecognizer? = null
-              private var vad: Vad? = null
               private var translator: Translator? = null
 
               private var srcLang = "ja"
@@ -535,10 +537,10 @@ jobs:
               private var bgAlpha = 195
               private var lastTranslatedLine = ""
 
-              private val contextHistory = ArrayDeque<String>()
+              private val contextHistory = ArrayList<String>()
               private val mainHandler = Handler(Looper.getMainLooper())
               private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-              private val audioChannel = Channel<FloatArray>(capacity = 2, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+              private val audioChannel = Channel<ByteArray>(capacity = 2, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
               private val autoHideMenuRunnable = Runnable {
                   if (!isPaused && !isLocked) {
@@ -854,7 +856,6 @@ jobs:
                   }
 
                   var ix = 0; var iy = 0; var tx = 0f; var ty = 0f
-                  var isDraggingBox = false
                   val dragAndTapListener = View.OnTouchListener { _, e ->
                       if (isLocked) return@OnTouchListener false
                       when (e.action) {
@@ -863,14 +864,12 @@ jobs:
                               iy = overlayParams.y
                               tx = e.rawX
                               ty = e.rawY
-                              isDraggingBox = false
                               true
                           }
                           MotionEvent.ACTION_MOVE -> {
                               val dx = (e.rawX - tx).toInt()
                               val dy = (e.rawY - ty).toInt()
                               if (abs(dx) > 12 || abs(dy) > 12) {
-                                  isDraggingBox = true
                                   val curSw = resources.displayMetrics.widthPixels
                                   val curSh = resources.displayMetrics.heightPixels
                                   overlayParams.x = (ix + dx).coerceIn(0, (curSw - 120).coerceAtLeast(0))
@@ -939,6 +938,29 @@ jobs:
                   }
               }
 
+              // ตัวกรองเสียงพูดมนุษย์ด้วย Kotlin (วิเคราะห์ความดัง RMS ร่วมกับอัตราตัดศูนย์ ZCR ของเสียงพูด)
+              private fun isHumanSpeechFrame(buf: ByteArray, len: Int): Boolean {
+                  val count = len / 2
+                  if (count < 2) return false
+                  var sumSq = 0.0
+                  var zeroCrossings = 0
+                  var prevSample = ((buf[1].toInt() shl 8) or (buf[0].toInt() and 0xFF)).toShort().toInt()
+                  sumSq += prevSample.toDouble() * prevSample.toDouble()
+
+                  for (i in 1 until count) {
+                      val sample = ((buf[i * 2 + 1].toInt() shl 8) or (buf[i * 2].toInt() and 0xFF)).toShort().toInt()
+                      sumSq += sample.toDouble() * sample.toDouble()
+                      if ((prevSample >= 0 && sample < 0) || (prevSample < 0 && sample >= 0)) {
+                          zeroCrossings++
+                      }
+                      prevSample = sample
+                  }
+                  val rms = sqrt(sumSq / count)
+                  val zcr = zeroCrossings.toDouble() / count
+                  // เสียงพูดมนุษย์ที่ 16kHz มีความดัง > 135 และอัตราตัดศูนย์อยู่ในช่วง 0.02 - 0.38 (ตัดเสียงฮัมต่ำและเสียงซ่าความถี่สูง)
+                  return rms > 135.0 && zcr in 0.02..0.38
+              }
+
               @SuppressLint("MissingPermission")
               private fun startAudioCapture() {
                   val proj = mediaProjection ?: return
@@ -971,32 +993,54 @@ jobs:
 
                   scope.launch {
                       val buf = ByteArray(1024)
+                      val acc = ByteArrayOutputStream()
+                      var startT = System.currentTimeMillis()
+                      var lastSpeechT = 0L
+                      var hasSpeech = false
+                      var speechFrames = 0
                       var lastUiUpdate = 0L
 
                       while (isActive) {
                           val read = audioRecord?.read(buf, 0, buf.size) ?: 0
                           if (isPaused) {
-                              vad?.reset()
+                              acc.reset()
+                              hasSpeech = false
+                              speechFrames = 0
                               continue
                           }
                           if (read > 0) {
-                              val floats = pcmToFloatArray(buf, read)
-                              val currentVad = vad
-                              if (currentVad != null) {
-                                  currentVad.acceptWaveform(floats)
-                                  val now = System.currentTimeMillis()
-                                  if (currentVad.isSpeechDetected() && now - lastUiUpdate > 350) {
-                                      updateStatus("● ได้ยินเสียงพูด...", "#34D399")
-                                      lastUiUpdate = now
-                                  }
-                                  while (!currentVad.empty()) {
-                                      val segment = currentVad.front()
-                                      val speechSamples = segment.samples
-                                      currentVad.pop()
-                                      if (speechSamples.isNotEmpty()) {
-                                          audioChannel.trySend(speechSamples)
+                              val isVoice = isHumanSpeechFrame(buf, read)
+                              val now = System.currentTimeMillis()
+
+                              if (isVoice) {
+                                  speechFrames++
+                                  lastSpeechT = now
+                                  if (speechFrames >= 3) {
+                                      if (!hasSpeech && now - lastUiUpdate > 300) {
+                                          updateStatus("● ได้ยินเสียงพูด...", "#34D399")
+                                          lastUiUpdate = now
                                       }
+                                      hasSpeech = true
                                   }
+                              } else if (!hasSpeech && now - lastSpeechT > 180) {
+                                  speechFrames = 0
+                              }
+
+                              if (hasSpeech) {
+                                  acc.write(buf, 0, read)
+                              } else {
+                                  startT = now
+                              }
+
+                              val elapsed = now - startT
+                              val silence = now - lastSpeechT
+                              if (hasSpeech && ((silence > 500 && elapsed > 850) || elapsed >= 3400)) {
+                                  val pcm = acc.toByteArray()
+                                  acc.reset()
+                                  hasSpeech = false
+                                  speechFrames = 0
+                                  startT = now
+                                  audioChannel.trySend(pcm)
                               }
                           }
                       }
@@ -1017,21 +1061,6 @@ jobs:
                               .build()
                           translator = Translation.getClient(mlOptions)
                           translator?.downloadModelIfNeeded(DownloadConditions.Builder().build())
-
-                          val vadConfig = VadModelConfig(
-                              sileroVadModelConfig = SileroVadModelConfig(
-                                  model = "silero_vad.onnx",
-                                  threshold = 0.5f,
-                                  minSilenceDuration = 0.45f,
-                                  minSpeechDuration = 0.25f,
-                                  windowSize = 512,
-                                  maxSpeechDuration = 3.8f
-                              ),
-                              sampleRate = 16000,
-                              numThreads = 1,
-                              debug = false
-                          )
-                          vad = Vad(assetManager = assets, config = vadConfig)
 
                           val config = OfflineRecognizerConfig(
                               featConfig = FeatureConfig(sampleRate = 16000, featureDim = 80),
@@ -1054,19 +1083,21 @@ jobs:
                           return@launch
                       }
 
-                      for (samples in audioChannel) {
+                      for (pcm in audioChannel) {
                           if (isPaused) continue
                           val rec = recognizer ?: continue
 
+                          val samples = pcmToFloatArray(pcm)
                           val stream = rec.createStream()
                           stream.acceptWaveform(samples, 16000)
                           rec.decode(stream)
                           val rawText = rec.getResult(stream).text
                           stream.release()
 
+                          // ตัดแท็กเสียงดนตรี/เสียงประกอบ <|BGM|> <|NOSPEECH|> ของ SenseVoice ออก
                           val cleanSrc = rawText.replace(Regex("<\\|[^|]+\\|>"), "").trim()
                           if (cleanSrc.any { it.isLetterOrDigit() }) {
-                              val historySnapshot = synchronized(contextHistory) { contextHistory.toList() }
+                              val historySnapshot = synchronized(contextHistory) { ArrayList(contextHistory) }
                               val thText = if (groqKey.isNotEmpty()) {
                                   translateWithGroq(cleanSrc, historySnapshot) ?: translateOffline(cleanSrc)
                               } else {
@@ -1075,9 +1106,9 @@ jobs:
 
                               synchronized(contextHistory) {
                                   if (contextHistory.size >= 3) {
-                                      contextHistory.removeFirst()
+                                      contextHistory.removeAt(0)
                                   }
-                                  contextHistory.addLast(cleanSrc)
+                                  contextHistory.add(cleanSrc)
                               }
 
                               withContext(Dispatchers.Main) {
@@ -1098,7 +1129,7 @@ jobs:
                                   statusLabel.setTextColor(Color.parseColor("#34D399"))
                               }
                           } else {
-                              updateStatus("● กรองเสียงที่ไม่ใช่คำพูด...", "#94A3B8")
+                              updateStatus("● กรองเสียงดนตรี/เสียงประกอบ...", "#94A3B8")
                           }
                       }
                   }
@@ -1157,8 +1188,8 @@ jobs:
                       }
               }
 
-              private fun pcmToFloatArray(pcm: ByteArray, len: Int): FloatArray {
-                  val count = len / 2
+              private fun pcmToFloatArray(pcm: ByteArray): FloatArray {
+                  val count = pcm.size / 2
                   val floats = FloatArray(count)
                   for (i in 0 until count) {
                       val lo = pcm[i * 2].toInt() and 0xFF
@@ -1218,7 +1249,6 @@ jobs:
                   scope.cancel()
                   audioChannel.close()
                   try { audioRecord?.stop(); audioRecord?.release() } catch (_: Exception) {}
-                  try { vad?.release() } catch (_: Exception) {}
                   try { recognizer?.release() } catch (_: Exception) {}
                   try { translator?.close() } catch (_: Exception) {}
                   if (::overlayRoot.isInitialized) windowManager.removeView(overlayRoot)
@@ -1228,7 +1258,7 @@ jobs:
           }
           EOF
 
-          # สร้างหน้า Web App (index.html) เวอร์ชัน 1.0 (แก้ไข iOS PiP และระบบรับเสียงคู่สำหรับ iOS)
+          # สร้างหน้า Web App (index.html) เวอร์ชัน 1.0 สำหรับ iOS Safari & Desktop
           cat << 'EOF' > index.html
           <!DOCTYPE html>
           <html lang="th">
@@ -1292,7 +1322,6 @@ jobs:
                 border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700;
               }
               .note { font-size: 12px; color: #94a3b8; margin-top: 10px; line-height: 1.5; }
-              /* ซ่อน video ด้วย opacity แทน display:none เพื่อให้ iOS Safari ยอมเปิดหน้าต่างลอย PiP */
               #pipVideo {
                 position: fixed; right: 2px; bottom: 2px; width: 2px; height: 2px;
                 opacity: 0.01; pointer-events: none; z-index: -1;
@@ -1562,7 +1591,6 @@ jobs:
                 const key = groqInput.value.trim();
                 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-                // หากใส่ Groq API Key หรือเปิดบนเบราว์เซอร์ iOS ที่ไม่มี SpeechRec (เช่น Chrome iOS) ให้ใช้โหมด Groq Whisper Audio
                 if (key && (isIOS || !SpeechRec)) {
                   await startGroqWhisperLoop(key);
                   return;
@@ -1576,7 +1604,6 @@ jobs:
                 startBrowserSpeechRec(SpeechRec);
               }
 
-              // โหมด 1: รับเสียงผ่านไมโครโฟนส่งตรงเข้า Groq Whisper-v3-Turbo (เสถียรสูงสุดบน iOS Safari & Chrome)
               async function startGroqWhisperLoop(key) {
                 if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                   alert('เบราว์เซอร์ไม่อนุญาตให้เข้าถึงไมโครโฟน กรุณาเปิดผ่าน Safari');
@@ -1688,7 +1715,6 @@ jobs:
                 } catch (_) {}
               }
 
-              // โหมด 2: ใช้ระบบรู้จำเสียงในเบราว์เซอร์ (สำหรับโหมดฟรีไม่ใส่ API Key)
               function startBrowserSpeechRec(SpeechRec) {
                 isListening = true;
                 document.getElementById('startBtn').textContent = 'หยุดการฟัง';
@@ -1700,7 +1726,6 @@ jobs:
                   if (!isListening) return;
                   recognition = new SpeechRec();
                   recognition.lang = document.getElementById('langSelect').value;
-                  // บน iOS Safari ต้องปิด continuous แล้วใช้วิธีรีสตาร์ทใน onend แทน เพื่อป้องกันบั๊กค้าง
                   recognition.continuous = !isIOS;
                   recognition.interimResults = true;
 
@@ -1814,7 +1839,6 @@ jobs:
                   }
                   await video.play();
 
-                  // รองรับคำสั่ง PiP เฉพาะของ iOS Safari
                   if (typeof video.webkitSetPresentationMode === 'function') {
                     const targetMode = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
                     video.webkitSetPresentationMode(targetMode);
@@ -1837,7 +1861,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Fix iOS Safari PiP and dual-engine speech recognition [skip ci]" || true
+          git commit -m "Release v1.0 fixed Kotlin speech filter and iOS Safari PiP [skip ci]" || true
           git push || true
 
       - name: Set up JDK 17
