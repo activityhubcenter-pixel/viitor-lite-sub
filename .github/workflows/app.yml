@@ -12,6 +12,9 @@ jobs:
       - name: Generate Android Project
         run: |
           mkdir -p app/src/main/java/com/example/jpthtranslator
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/res/mipmap-anydpi-v26
 
           cat << 'EOF' > gradle.properties
           android.useAndroidX=true
@@ -56,8 +59,8 @@ jobs:
                   applicationId = "com.example.jpthtranslator"
                   minSdk = 29
                   targetSdk = 34
-                  versionCode = 2
-                  versionName = "1.1"
+                  versionCode = 3
+                  versionName = "1.2"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -72,6 +75,73 @@ jobs:
           }
           EOF
 
+          cat << 'EOF' > app/src/main/res/values/ic_launcher_background.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_launcher_background">#1D4ED8</color>
+          </resources>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/drawable/ic_launcher_foreground.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="108"
+              android:viewportHeight="108">
+
+              <!-- Soft Outer Glow Ring -->
+              <path
+                  android:fillColor="#2660A5FA"
+                  android:pathData="M54,16A38,38 0 1,1 54,92A38,38 0 1,1 54,16Z" />
+
+              <!-- Back Translation Card (Dark Slate) -->
+              <path
+                  android:fillColor="#0F172A"
+                  android:pathData="M30,30h34a6,6 0 0,1 6,6v20a6,6 0 0,1 -6,6h-22l-7,6v-6h-5a6,6 0 0,1 -6,-6v-20a6,6 0 0,1 6,-6z" />
+
+              <!-- Audio Wave Bars inside Back Card -->
+              <path
+                  android:strokeColor="#38BDF8"
+                  android:strokeWidth="3"
+                  android:strokeLineCap="round"
+                  android:pathData="M39,43v6 M45,39v14 M51,41v10 M57,44v4" />
+
+              <!-- Front Subtitle Bubble (Crisp White) -->
+              <path
+                  android:fillColor="#FFFFFF"
+                  android:pathData="M42,48h36a6,6 0 0,1 6,6v18a6,6 0 0,1 -6,6h-6v6l-7,-6h-23a6,6 0 0,1 -6,-6v-18a6,6 0 0,1 6,-6z" />
+
+              <!-- Subtitle Text Lines inside Front Bubble -->
+              <path
+                  android:strokeColor="#1E3A8A"
+                  android:strokeWidth="3.2"
+                  android:strokeLineCap="round"
+                  android:pathData="M49,59h22 M49,67h14" />
+
+              <!-- Accent Dot -->
+              <path
+                  android:fillColor="#F59E0B"
+                  android:pathData="M71,67m-2.2,0a2.2,2.2 0 1,1 4.4,0a2.2,2.2 0 1,1 -4.4,0" />
+          </vector>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
+          cat << 'EOF' > app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_launcher_background" />
+              <foreground android:drawable="@drawable/ic_launcher_foreground" />
+          </adaptive-icon>
+          EOF
+
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -84,6 +154,8 @@ jobs:
 
               <application
                   android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round"
                   android:label="JP-TH Live Sub"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
                   <activity
@@ -133,13 +205,13 @@ jobs:
 
                   val root = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
-                      setBackgroundColor(Color.parseColor("#12151C"))
+                      setBackgroundColor(Color.parseColor("#0F172A"))
                       setPadding(56, 80, 56, 56)
                   }
 
                   val title = TextView(this).apply {
-                      text = "JP → TH Live Subtitle (Fast)"
-                      textSize = 23f
+                      text = "JP → TH Live Subtitle"
+                      textSize = 24f
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
                       setPadding(0, 0, 0, 12)
@@ -148,19 +220,19 @@ jobs:
                   val desc = TextView(this).apply {
                       text = "แปลเสียงวิดีโอจาก Chrome เป็นซับลอยจออัตโนมัติ"
                       textSize = 14f
-                      setTextColor(Color.parseColor("#9CA3AF"))
+                      setTextColor(Color.parseColor("#94A3B8"))
                       setPadding(0, 0, 0, 48)
                   }
 
                   val inputBg = GradientDrawable().apply {
-                      setColor(Color.parseColor("#1F2430"))
+                      setColor(Color.parseColor("#1E293B"))
                       cornerRadius = 24f
-                      setStroke(2, Color.parseColor("#374151"))
+                      setStroke(2, Color.parseColor("#334155"))
                   }
 
                   apiKeyInput = EditText(this).apply {
                       hint = "วาง Gemini API Key (AIza...)"
-                      setHintTextColor(Color.parseColor("#6B7280"))
+                      setHintTextColor(Color.parseColor("#64748B"))
                       setTextColor(Color.WHITE)
                       setText(prefs.getString("api_key", ""))
                       background = inputBg
@@ -214,9 +286,9 @@ jobs:
                   }
 
                   statusText = TextView(this).apply {
-                      text = "สถานะ: พร้อมใช้งาน (แนะนำเลือกแชร์ 'ทั้งหน้าจอ')"
+                      text = "สถานะ: พร้อมใช้งาน"
                       textSize = 14f
-                      setTextColor(Color.parseColor("#60A5FA"))
+                      setTextColor(Color.parseColor("#38BDF8"))
                       setPadding(0, 24, 0, 0)
                   }
 
@@ -324,6 +396,9 @@ jobs:
               private var isPaused = false
               private var fontSize = 17f
 
+              private val candidateModels = mutableListOf<String>()
+              private var currentModelIndex = 0
+
               private val mainHandler = Handler(Looper.getMainLooper())
               private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
               private val audioChannel = Channel<ByteArray>(capacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -367,9 +442,9 @@ jobs:
                   val sh = resources.displayMetrics.heightPixels
 
                   val bg = GradientDrawable().apply {
-                      setColor(Color.parseColor("#E611141C"))
+                      setColor(Color.parseColor("#EB0F172A"))
                       cornerRadius = 32f
-                      setStroke(2, Color.parseColor("#33FFFFFF"))
+                      setStroke(2, Color.parseColor("#38BDF8"))
                   }
 
                   overlayRoot = LinearLayout(this).apply {
@@ -387,7 +462,7 @@ jobs:
                   statusLabel = TextView(this).apply {
                       text = "● รอเสียงจากวิดีโอ..."
                       textSize = 12f
-                      setTextColor(Color.parseColor("#9CA3AF"))
+                      setTextColor(Color.parseColor("#94A3B8"))
                       layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                   }
 
@@ -424,7 +499,7 @@ jobs:
                           isPaused = !isPaused
                           text = if (isPaused) " ▶ " else " ⏸ "
                           statusLabel.text = if (isPaused) "● หยุดแปลชั่วคราว" else "● รอเสียงจากวิดีโอ..."
-                          statusLabel.setTextColor(if (isPaused) Color.parseColor("#FBBF24") else Color.parseColor("#9CA3AF"))
+                          statusLabel.setTextColor(if (isPaused) Color.parseColor("#FBBF24") else Color.parseColor("#94A3B8"))
                       }
                   }
 
@@ -445,13 +520,13 @@ jobs:
                   jpTextView = TextView(this).apply {
                       text = ""
                       textSize = fontSize - 3f
-                      setTextColor(Color.parseColor("#9CA3AF"))
+                      setTextColor(Color.parseColor("#94A3B8"))
                       visibility = View.GONE
                       setPadding(0, 0, 0, 6)
                   }
 
                   thTextView = TextView(this).apply {
-                      text = "เร่งเสียงสื่อเกิน 50% แล้วเล่นวิดีโอได้เลย"
+                      text = "เล่นวิดีโอภาษาญี่ปุ่นใน Chrome ได้เลย..."
                       textSize = fontSize
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
@@ -572,13 +647,53 @@ jobs:
                   }
               }
 
+              private fun discoverFlashModels() {
+                  try {
+                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey")
+                      val conn = (url.openConnection() as HttpURLConnection).apply {
+                          requestMethod = "GET"
+                          connectTimeout = 5000
+                          readTimeout = 5000
+                      }
+                      if (conn.responseCode == 200) {
+                          val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                          val modelsArr = JSONObject(resp).optJSONArray("models")
+                          val found = mutableListOf<String>()
+                          if (modelsArr != null) {
+                              for (i in 0 until modelsArr.length()) {
+                                  val m = modelsArr.getJSONObject(i)
+                                  val name = m.optString("name", "").removePrefix("models/")
+                                  val methods = m.optJSONArray("supportedGenerationMethods")?.toString() ?: ""
+                                  if (methods.contains("generateContent") &&
+                                      name.contains("flash", ignoreCase = true) &&
+                                      !name.contains("image", ignoreCase = true) &&
+                                      !name.contains("tts", ignoreCase = true) &&
+                                      !name.contains("embedding", ignoreCase = true)
+                                  ) {
+                                      found.add(name)
+                                  }
+                              }
+                          }
+                          val sorted = found.sortedWith(compareBy<String> { it.contains("lite") }.thenByDescending { it })
+                          candidateModels.clear()
+                          candidateModels.addAll(sorted)
+                      }
+                  } catch (_: Exception) {}
+
+                  listOf("gemini-2.5-flash", "gemini-2.0-flash").forEach { fallback ->
+                      if (!candidateModels.contains(fallback)) candidateModels.add(fallback)
+                  }
+                  currentModelIndex = 0
+              }
+
               private fun startTranslator() {
                   scope.launch {
+                      discoverFlashModels()
                       for (pcm in audioChannel) {
                           if (isPaused) continue
-                          updateStatus("● กำลังแปล...", "#60A5FA")
+                          updateStatus("● กำลังแปล...", "#38BDF8")
                           val wav = pcmToWav(pcm, 16000)
-                          val res = callGemini(wav)
+                          val res = callGeminiWithFallback(wav)
                           if (res.startsWith("ERR:")) {
                               updateStatus("● ${res.removePrefix("ERR:")}", "#F87171")
                           } else if (res.isNotBlank() && !res.contains("SILENT", ignoreCase = true)) {
@@ -598,15 +713,32 @@ jobs:
                                   statusLabel.setTextColor(Color.parseColor("#34D399"))
                               }
                           } else {
-                              updateStatus("● รอเสียงพูด...", "#9CA3AF")
+                              updateStatus("● รอเสียงพูด...", "#94A3B8")
                           }
                       }
                   }
               }
 
-              private fun callGemini(wav: ByteArray): String {
+              private fun callGeminiWithFallback(wav: ByteArray): String {
+                  if (candidateModels.isEmpty()) discoverFlashModels()
+                  var lastError = ""
+                  while (currentModelIndex < candidateModels.size) {
+                      val model = candidateModels[currentModelIndex]
+                      val result = callGeminiSingleModel(wav, model)
+                      if (result == "MODEL_404") {
+                          currentModelIndex++
+                          lastError = "ERR:ไม่พบโมเดล ($model)"
+                          continue
+                      }
+                      return result
+                  }
+                  currentModelIndex = 0
+                  return lastError.ifEmpty { "ERR:ไม่พบโมเดลที่รองรับ" }
+              }
+
+              private fun callGeminiSingleModel(wav: ByteArray, modelName: String): String {
                   return try {
-                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$apiKey")
+                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey")
                       val conn = (url.openConnection() as HttpURLConnection).apply {
                           requestMethod = "POST"
                           setRequestProperty("Content-Type", "application/json; charset=UTF-8")
@@ -629,7 +761,9 @@ jobs:
 
                       val genConfig = JSONObject().apply {
                           put("temperature", 0.2)
-                          put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+                          if (modelName.contains("2.5") || modelName.contains("3")) {
+                              put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+                          }
                       }
 
                       val body = JSONObject().apply {
@@ -648,17 +782,17 @@ jobs:
 
                       conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
 
-                      if (conn.responseCode == 200) {
-                          val text = conn.inputStream.bufferedReader().use { it.readText() }
-                          val candidate = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)
-                          val partText = candidate?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "") ?: ""
-                          partText.trim()
-                      } else if (conn.responseCode == 429) {
-                          "ERR:โควตาเต็ม รอ 1 นาที"
-                      } else if (conn.responseCode == 400 || conn.responseCode == 403) {
-                          "ERR:API Key ไม่ถูกต้อง (${conn.responseCode})"
-                      } else {
-                          "ERR:เซิร์ฟเวอร์ (${conn.responseCode})"
+                      when (conn.responseCode) {
+                          200 -> {
+                              val text = conn.inputStream.bufferedReader().use { it.readText() }
+                              val candidate = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)
+                              val partText = candidate?.optJSONObject("content")?.optJSONArray("parts")?.optJSONObject(0)?.optString("text", "") ?: ""
+                              partText.trim()
+                          }
+                          404 -> "MODEL_404"
+                          429 -> "ERR:โควตาเต็ม รอ 1 นาที"
+                          400, 403 -> "ERR:API Key ไม่ถูกต้อง (${conn.responseCode})"
+                          else -> "ERR:เซิร์ฟเวอร์ (${conn.responseCode})"
                       }
                   } catch (e: Exception) {
                       "ERR:เน็ตช้า/หมดเวลา"
@@ -694,7 +828,7 @@ jobs:
                   )
                   val notif = Notification.Builder(this, id)
                       .setContentTitle("JP-TH Live Subtitle กำลังทำงาน")
-                      .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                      .setSmallIcon(R.drawable.ic_launcher_foreground)
                       .build()
                   if (Build.VERSION.SDK_INT >= 29) {
                       startForeground(1, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
