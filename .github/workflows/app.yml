@@ -59,8 +59,8 @@ jobs:
                   applicationId = "com.example.jpthtranslator"
                   minSdk = 29
                   targetSdk = 34
-                  versionCode = 3
-                  versionName = "1.2"
+                  versionCode = 4
+                  versionName = "1.3"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -90,36 +90,30 @@ jobs:
               android:viewportWidth="108"
               android:viewportHeight="108">
 
-              <!-- Soft Outer Glow Ring -->
               <path
                   android:fillColor="#2660A5FA"
                   android:pathData="M54,16A38,38 0 1,1 54,92A38,38 0 1,1 54,16Z" />
 
-              <!-- Back Translation Card (Dark Slate) -->
               <path
                   android:fillColor="#0F172A"
                   android:pathData="M30,30h34a6,6 0 0,1 6,6v20a6,6 0 0,1 -6,6h-22l-7,6v-6h-5a6,6 0 0,1 -6,-6v-20a6,6 0 0,1 6,-6z" />
 
-              <!-- Audio Wave Bars inside Back Card -->
               <path
                   android:strokeColor="#38BDF8"
                   android:strokeWidth="3"
                   android:strokeLineCap="round"
                   android:pathData="M39,43v6 M45,39v14 M51,41v10 M57,44v4" />
 
-              <!-- Front Subtitle Bubble (Crisp White) -->
               <path
                   android:fillColor="#FFFFFF"
                   android:pathData="M42,48h36a6,6 0 0,1 6,6v18a6,6 0 0,1 -6,6h-6v6l-7,-6h-23a6,6 0 0,1 -6,-6v-18a6,6 0 0,1 6,-6z" />
 
-              <!-- Subtitle Text Lines inside Front Bubble -->
               <path
                   android:strokeColor="#1E3A8A"
                   android:strokeWidth="3.2"
                   android:strokeLineCap="round"
                   android:pathData="M49,59h22 M49,67h14" />
 
-              <!-- Accent Dot -->
               <path
                   android:fillColor="#F59E0B"
                   android:pathData="M71,67m-2.2,0a2.2,2.2 0 1,1 4.4,0a2.2,2.2 0 1,1 -4.4,0" />
@@ -218,7 +212,7 @@ jobs:
                   }
 
                   val desc = TextView(this).apply {
-                      text = "แปลเสียงวิดีโอจาก Chrome เป็นซับลอยจออัตโนมัติ"
+                      text = "แปลเสียงวิดีโอจาก Chrome (ใส่หลาย API Key คั่นด้วย , ได้)"
                       textSize = 14f
                       setTextColor(Color.parseColor("#94A3B8"))
                       setPadding(0, 0, 0, 48)
@@ -231,7 +225,7 @@ jobs:
                   }
 
                   apiKeyInput = EditText(this).apply {
-                      hint = "วาง Gemini API Key (AIza...)"
+                      hint = "วาง Gemini API Key (เช่น AIza1..., AIza2...)"
                       setHintTextColor(Color.parseColor("#64748B"))
                       setTextColor(Color.WHITE)
                       setText(prefs.getString("api_key", ""))
@@ -286,7 +280,7 @@ jobs:
                   }
 
                   statusText = TextView(this).apply {
-                      text = "สถานะ: พร้อมใช้งาน"
+                      text = "สถานะ: พร้อมใช้งาน (โหมดประหยัดโควตาอัตโนมัติ)"
                       textSize = 14f
                       setTextColor(Color.parseColor("#38BDF8"))
                       setPadding(0, 24, 0, 0)
@@ -391,7 +385,8 @@ jobs:
 
               private var mediaProjection: MediaProjection? = null
               private var audioRecord: AudioRecord? = null
-              private var apiKey = ""
+              private var apiKeys: List<String> = emptyList()
+              private var currentKeyIndex = 0
               private var showBilingual = false
               private var isPaused = false
               private var fontSize = 17f
@@ -406,7 +401,8 @@ jobs:
               override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
                   startForegroundNotif()
                   val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: return START_NOT_STICKY
-                  apiKey = intent.getStringExtra("API_KEY") ?: ""
+                  val rawKey = intent.getStringExtra("API_KEY") ?: ""
+                  apiKeys = rawKey.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                   showBilingual = intent.getBooleanExtra("BILINGUAL", false)
 
                   val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
@@ -416,7 +412,7 @@ jobs:
                       intent.getParcelableExtra("DATA")
                   }
 
-                  if (data == null || apiKey.isEmpty()) {
+                  if (data == null || apiKeys.isEmpty()) {
                       stopSelf()
                       return START_NOT_STICKY
                   }
@@ -622,8 +618,8 @@ jobs:
                               val rms = calcRms(buf, read)
                               val now = System.currentTimeMillis()
 
-                              if (rms > 75.0) {
-                                  if (!hasSpeech && now - lastUiUpdate > 300) {
+                              if (rms > 130.0) {
+                                  if (!hasSpeech && now - lastUiUpdate > 400) {
                                       updateStatus("● ได้ยินเสียง...", "#34D399")
                                       lastUiUpdate = now
                                   }
@@ -635,7 +631,8 @@ jobs:
 
                               val elapsed = now - startT
                               val silence = now - lastSpeechT
-                              if (hasSpeech && ((silence > 450 && elapsed > 850) || elapsed >= 2300)) {
+                              // ตัดส่งทุกๆ 4.5 วินาที หรือเมื่อเงียบเกิน 0.75 วิ เพื่อประหยัดโควตาและแปลได้เต็มประโยค
+                              if (hasSpeech && ((silence > 750 && elapsed > 1500) || elapsed >= 4500)) {
                                   val pcm = acc.toByteArray()
                                   acc.reset()
                                   hasSpeech = false
@@ -649,7 +646,8 @@ jobs:
 
               private fun discoverFlashModels() {
                   try {
-                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey")
+                      val firstKey = apiKeys.first()
+                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models?key=$firstKey")
                       val conn = (url.openConnection() as HttpURLConnection).apply {
                           requestMethod = "GET"
                           connectTimeout = 5000
@@ -668,19 +666,20 @@ jobs:
                                       name.contains("flash", ignoreCase = true) &&
                                       !name.contains("image", ignoreCase = true) &&
                                       !name.contains("tts", ignoreCase = true) &&
-                                      !name.contains("embedding", ignoreCase = true)
+                                      !name.contains("embedding", ignoreCase = true) &&
+                                      !name.contains("thinking", ignoreCase = true)
                                   ) {
                                       found.add(name)
                                   }
                               }
                           }
-                          val sorted = found.sortedWith(compareBy<String> { it.contains("lite") }.thenByDescending { it })
+                          val sorted = found.sortedWith(compareByDescending<String> { it.contains("lite") }.thenByDescending { it })
                           candidateModels.clear()
                           candidateModels.addAll(sorted)
                       }
                   } catch (_: Exception) {}
 
-                  listOf("gemini-2.5-flash", "gemini-2.0-flash").forEach { fallback ->
+                  listOf("gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash").forEach { fallback ->
                       if (!candidateModels.contains(fallback)) candidateModels.add(fallback)
                   }
                   currentModelIndex = 0
@@ -721,30 +720,44 @@ jobs:
 
               private fun callGeminiWithFallback(wav: ByteArray): String {
                   if (candidateModels.isEmpty()) discoverFlashModels()
+                  val totalCombinations = candidateModels.size * apiKeys.size
+                  var attempts = 0
                   var lastError = ""
-                  while (currentModelIndex < candidateModels.size) {
+
+                  while (attempts < totalCombinations) {
                       val model = candidateModels[currentModelIndex]
-                      val result = callGeminiSingleModel(wav, model)
+                      val key = apiKeys[currentKeyIndex]
+                      val result = callGeminiSingleModel(wav, model, key)
+
                       if (result == "MODEL_404") {
-                          currentModelIndex++
+                          currentModelIndex = (currentModelIndex + 1) % candidateModels.size
                           lastError = "ERR:ไม่พบโมเดล ($model)"
+                          attempts++
+                          continue
+                      }
+                      if (result == "RATE_429") {
+                          currentModelIndex = (currentModelIndex + 1) % candidateModels.size
+                          if (currentModelIndex == 0 && apiKeys.size > 1) {
+                              currentKeyIndex = (currentKeyIndex + 1) % apiKeys.size
+                          }
+                          lastError = "ERR:โควตาเต็ม รอสักครู่..."
+                          attempts++
                           continue
                       }
                       return result
                   }
-                  currentModelIndex = 0
-                  return lastError.ifEmpty { "ERR:ไม่พบโมเดลที่รองรับ" }
+                  return lastError.ifEmpty { "ERR:โควตาเต็ม รอสักครู่..." }
               }
 
-              private fun callGeminiSingleModel(wav: ByteArray, modelName: String): String {
+              private fun callGeminiSingleModel(wav: ByteArray, modelName: String, activeKey: String): String {
                   return try {
-                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey")
+                      val url = URL("https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$activeKey")
                       val conn = (url.openConnection() as HttpURLConnection).apply {
                           requestMethod = "POST"
                           setRequestProperty("Content-Type", "application/json; charset=UTF-8")
                           doOutput = true
-                          connectTimeout = 6000
-                          readTimeout = 6000
+                          connectTimeout = 7000
+                          readTimeout = 7000
                       }
                       val b64 = Base64.encodeToString(wav, Base64.NO_WRAP)
                       val prompt = if (showBilingual) {
@@ -790,7 +803,7 @@ jobs:
                               partText.trim()
                           }
                           404 -> "MODEL_404"
-                          429 -> "ERR:โควตาเต็ม รอ 1 นาที"
+                          429 -> "RATE_429"
                           400, 403 -> "ERR:API Key ไม่ถูกต้อง (${conn.responseCode})"
                           else -> "ERR:เซิร์ฟเวอร์ (${conn.responseCode})"
                       }
