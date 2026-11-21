@@ -7,23 +7,23 @@
   <style>
     :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --primary: #2563eb; }
     * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-    body { margin: 0; background: var(--bg); color: #fff; padding: 18px; display: flex; flex-direction: column; align-items: center; }
+    body { margin: 0; background: var(--bg); color: #fff; padding: 14px; display: flex; flex-direction: column; align-items: center; }
     .container { width: 100%; max-width: 960px; }
-    h1 { font-size: 21px; margin: 0 0 6px; }
-    p.sub { color: #94a3b8; font-size: 13px; margin: 0 0 14px; }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p.sub { color: #94a3b8; font-size: 12.5px; margin: 0 0 12px; }
     .panel {
       background: rgba(9, 14, 26, 0.96); border: 1px solid #334155; border-radius: 16px;
-      padding: 14px; margin-bottom: 14px;
+      padding: 12px; margin-bottom: 12px;
     }
     .panel.hidden { display: none; }
-    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
     select, input[type="text"] {
       background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 10px;
-      padding: 10px 12px; font-size: 14px; flex: 1; min-width: 140px;
+      padding: 10px 12px; font-size: 14px; flex: 1; min-width: 135px;
     }
     button {
       background: var(--primary); color: #fff; border: none; border-radius: 10px;
-      padding: 10px 14px; font-size: 14px; font-weight: 600; cursor: pointer;
+      padding: 10px 13px; font-size: 13.5px; font-weight: 600; cursor: pointer;
     }
     button.stop { background: #dc2626; }
     button.pip { background: #0284c7; }
@@ -38,9 +38,9 @@
          0px    2px   6px rgba(0, 0, 0, 0.95);
     }
     #subBox {
-      position: relative; width: 100%; min-height: 140px; border-radius: 18px; padding: 18px 20px 32px;
+      position: relative; width: 100%; min-height: 135px; border-radius: 18px; padding: 16px 18px 30px;
       border: 2px solid rgba(56, 189, 248, 0.65);
-      background: rgba(15, 23, 42, 0.80);
+      background: rgba(15, 23, 42, 0.82);
       overflow: auto; transition: background 0.15s; cursor: pointer;
     }
     #subBox.locked { pointer-events: none; border-color: rgba(56, 189, 248, 0.25); }
@@ -59,13 +59,18 @@
       background: rgba(6, 11, 22, 0.95); color: #38bdf8; border: 1px solid #38bdf8;
       border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700;
     }
-    .note { font-size: 12px; color: #94a3b8; margin-top: 12px; line-height: 1.5; }
+    .note { font-size: 12px; color: #94a3b8; margin-top: 10px; line-height: 1.5; }
+    /* ซ่อน video ด้วย opacity แทน display:none เพื่อให้ iOS Safari ยอมเปิดหน้าต่างลอย PiP */
+    #pipVideo {
+      position: fixed; right: 2px; bottom: 2px; width: 2px; height: 2px;
+      opacity: 0.01; pointer-events: none; z-index: -1;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Live Subtitle v1.0 (iOS / iPad / PC)</h1>
-    <p class="sub">ซ่อนเมนูอัตโนมัติใน 5 วินาที • ตัวอักษรมีขอบเงาอ่านชัดทุกพื้นหลัง</p>
+    <p class="sub">รองรับหน้าต่างลอย PiP บน Safari • ซ่อนเมนูอัตโนมัติใน 5 วินาที</p>
 
     <div class="panel" id="controlPanel">
       <div class="row">
@@ -80,13 +85,13 @@
       </div>
 
       <div class="row">
-        <input type="text" id="groqKey" placeholder="Groq API Key (ไม่บังคับ - ใส่เพื่อให้แปลต่อเนื่องตามบริบท)" />
+        <input type="text" id="groqKey" placeholder="Groq API Key (แนะนำสำหรับ iOS - ช่วยแกะเสียงและแปลตามบริบทแม่นยำ)" />
       </div>
 
       <div class="row" style="justify-content: space-between; margin-bottom: 0;">
         <div class="slider-group">
           <span>ความเข้มพื้นหลัง:</span>
-          <input type="range" id="opacityRange" min="5" max="98" value="80" oninput="updateOpacity(this.value)" />
+          <input type="range" id="opacityRange" min="5" max="98" value="82" oninput="updateOpacity(this.value)" />
         </div>
         <div class="slider-group">
           <button class="secondary" onclick="changeFont(-2)">A-</button>
@@ -100,21 +105,22 @@
       <div id="status" class="outline-text">● พร้อมใช้งาน (กด "เริ่มฟังและแปลสด")</div>
       <div id="srcText" class="outline-text"></div>
       <div id="prevTh" class="outline-text"></div>
-      <div id="thText" class="outline-text">เปิดเล่นวิดีโอหรือเสียงจากแอปใดก็ได้ แล้วกดเริ่มฟังได้เลย</div>
+      <div id="thText" class="outline-text">เปิดผ่าน Safari บน iPhone/iPad กดเริ่มฟัง แล้วกด "หน้าต่างลอย (PiP)" ได้เลย</div>
       <div id="webResizeHandle">⤢ ขยาย</div>
     </div>
 
     <p class="note">
-      <b>วิธีใช้บน iPhone / iPad (Safari):</b> กด <b>เริ่มฟังและแปลสด</b> แล้วกดปุ่ม <b>หน้าต่างลอย (PiP)</b> จากนั้นสลับไปเปิดแอปวิดีโอหรือสื่อเสียงที่ต้องการได้เลย กล่องซับจะลอยทับหน้าจอให้อัตโนมัติ (เมนูจะซ่อนเองใน 5 วินาที แตะที่กล่องซับเพื่อเรียกเมนูกลับมา)
+      <b>คำแนะนำสำหรับ iPhone / iPad:</b> ต้องเปิดลิงก์นี้ผ่านแอป <b>Safari</b> เท่านั้นจึงจะกดปุ่ม <b>หน้าต่างลอย (PiP)</b> ลอยข้ามแอปได้ (หากใส่ Groq API Key ระบบจะใช้ AI Whisper แกะเสียงซึ่งแม่นยำและเสถียรกว่าไมค์ปกติของ iOS มาก)
     </p>
   </div>
 
   <button id="floatingUnlockBtn" onclick="toggleWebLock()">🔒 ปลดล็อกกล่องซับ</button>
 
-  <canvas id="pipCanvas" width="720" height="240" style="display:none;"></canvas>
-  <video id="pipVideo" playsinline muted style="display:none;"></video>
+  <canvas id="pipCanvas" width="760" height="240" style="display:none;"></canvas>
+  <video id="pipVideo" playsinline webkit-playsinline muted></video>
 
   <script>
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     let recognition = null;
     let isListening = false;
     let isWebLocked = false;
@@ -123,13 +129,24 @@
     let prevTh = "";
     let currentSrc = "";
     let translateTimer = null;
+    let restartTimer = null;
+    let pipInterval = null;
     let lastTranslatedSrc = "";
     let hideMenuTimer = null;
+    let mediaStream = null;
+    let audioCtx = null;
+    let analyser = null;
     const contextHistory = [];
 
     const groqInput = document.getElementById('groqKey');
     groqInput.value = localStorage.getItem('web_groq_key') || '';
     groqInput.addEventListener('change', () => localStorage.setItem('web_groq_key', groqInput.value.trim()));
+
+    function setStatus(msg, color = '#34d399') {
+      const el = document.getElementById('status');
+      el.textContent = msg;
+      el.style.color = color;
+    }
 
     function toggleWebLock() {
       isWebLocked = !isWebLocked;
@@ -182,9 +199,9 @@
     }
     function doResize(cx, cy) {
       if (!resizing) return;
-      const maxW = window.innerWidth - 24;
-      const newW = Math.min(maxW, Math.max(260, startW + (cx - startX)));
-      const newH = Math.min(window.innerHeight * 0.75, Math.max(120, startH + (cy - startY)));
+      const maxW = window.innerWidth - 20;
+      const newW = Math.min(maxW, Math.max(250, startW + (cx - startX)));
+      const newH = Math.min(window.innerHeight * 0.78, Math.max(120, startH + (cy - startY)));
       subBox.style.width = newW + 'px';
       subBox.style.height = newH + 'px';
     }
@@ -264,7 +281,7 @@
         pushContext(text);
         setSubtitle(translated);
       } catch (e) {
-        document.getElementById('status').textContent = '● ขัดข้องชั่วคราว กำลังฟังต่อ...';
+        setStatus('● แปลขัดข้องชั่วคราว กำลังฟังต่อ...', '#fbbf24');
       }
     }
 
@@ -283,57 +300,223 @@
       drawPiPCanvas();
     }
 
-    function toggleListen() {
-      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SpeechRec) {
-        alert('เบราว์เซอร์นี้ไม่รองรับการถอดเสียงสด กรุณาเปิดผ่าน Safari (iOS) หรือเบราว์เซอร์ที่รองรับเสียง');
-        return;
+    function stopAllListening() {
+      isListening = false;
+      clearTimeout(restartTimer);
+      if (recognition) {
+        try { recognition.onend = null; recognition.stop(); } catch (_) {}
+        recognition = null;
       }
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+      if (audioCtx) {
+        try { audioCtx.close(); } catch (_) {}
+        audioCtx = null;
+      }
+      document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
+      document.getElementById('startBtn').classList.remove('stop');
+      setStatus('● หยุดฟังแล้ว', '#94a3b8');
+      revealWebMenu();
+    }
+
+    async function toggleListen() {
       if (isListening) {
-        isListening = false;
-        if (recognition) recognition.stop();
-        document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
-        document.getElementById('startBtn').classList.remove('stop');
-        document.getElementById('status').textContent = '● หยุดฟังแล้ว';
-        revealWebMenu();
+        stopAllListening();
         return;
       }
 
-      recognition = new SpeechRec();
-      recognition.lang = document.getElementById('langSelect').value;
-      recognition.continuous = true;
-      recognition.interimResults = true;
+      const key = groqInput.value.trim();
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-      recognition.onstart = () => {
-        isListening = true;
-        document.getElementById('startBtn').textContent = 'หยุดการฟัง';
-        document.getElementById('startBtn').classList.add('stop');
-        document.getElementById('status').textContent = '● กำลังฟังเสียงสด...';
-        revealWebMenu();
-      };
+      // หากใส่ Groq API Key หรือเปิดบนเบราว์เซอร์ iOS ที่ไม่มี SpeechRec (เช่น Chrome iOS) ให้ใช้โหมด Groq Whisper Audio
+      if (key && (isIOS || !SpeechRec)) {
+        await startGroqWhisperLoop(key);
+        return;
+      }
 
-      recognition.onresult = (event) => {
-        let transcript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          transcript += event.results[i][0].transcript;
+      if (!SpeechRec) {
+        alert('เบราว์เซอร์นี้ไม่รองรับการถอดเสียงอัตโนมัติ กรุณาเปิดผ่าน Safari บน iOS หรือวาง Groq API Key ด้านบนเพื่อใช้งานได้ทุกเบราว์เซอร์');
+        return;
+      }
+
+      startBrowserSpeechRec(SpeechRec);
+    }
+
+    // โหมด 1: รับเสียงผ่านไมโครโฟนส่งตรงเข้า Groq Whisper-v3-Turbo (เสถียรสูงสุดบน iOS Safari & Chrome)
+    async function startGroqWhisperLoop(key) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('เบราว์เซอร์ไม่อนุญาตให้เข้าถึงไมโครโฟน กรุณาเปิดผ่าน Safari');
+        return;
+      }
+
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true }
+        });
+      } catch (err) {
+        setStatus('● ไม่ได้รับอนุญาตใช้ไมโครโฟน (กรุณากดอนุญาตใน Safari)', '#f87171');
+        return;
+      }
+
+      isListening = true;
+      document.getElementById('startBtn').textContent = 'หยุดการฟัง';
+      document.getElementById('startBtn').classList.add('stop');
+      setStatus('● กำลังฟังด้วย AI Whisper (iOS Ready)...', '#34d399');
+      revealWebMenu();
+
+      try {
+        const AudioContextCls = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContextCls();
+        const srcNode = audioCtx.createMediaStreamSource(mediaStream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        srcNode.connect(analyser);
+      } catch (_) {}
+
+      const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm'))
+        ? 'audio/webm'
+        : (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
+
+      while (isListening && mediaStream) {
+        const blob = await recordOneChunk(mediaStream, mimeType, 2800);
+        if (!isListening || !blob || blob.size < 1200) continue;
+
+        transcribeAndTranslateBlob(blob, mimeType, key);
+      }
+    }
+
+    function recordOneChunk(stream, mimeType, durationMs) {
+      return new Promise(resolve => {
+        try {
+          const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+          const chunks = [];
+          let hadSound = false;
+
+          const checkTimer = setInterval(() => {
+            if (!analyser) { hadSound = true; return; }
+            const data = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteTimeDomainData(data);
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) {
+              const v = (data[i] - 128) / 128;
+              sum += v * v;
+            }
+            const rms = Math.sqrt(sum / data.length);
+            if (rms > 0.012) hadSound = true;
+          }, 120);
+
+          recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+          recorder.onstop = () => {
+            clearInterval(checkTimer);
+            if (!hadSound) {
+              resolve(null);
+            } else {
+              resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/mp4' }));
+            }
+          };
+
+          recorder.start();
+          setTimeout(() => {
+            if (recorder.state !== 'inactive') {
+              try { recorder.stop(); } catch (_) { resolve(null); }
+            }
+          }, durationMs);
+        } catch (e) {
+          setTimeout(() => resolve(null), 500);
         }
-        transcript = transcript.trim();
-        if (!transcript) return;
+      });
+    }
 
-        currentSrc = transcript;
-        document.getElementById('srcText').textContent = document.getElementById('showOrig').checked ? transcript : '';
+    async function transcribeAndTranslateBlob(blob, mimeType, key) {
+      try {
+        const langCode = document.getElementById('langSelect').value.split('-')[0];
+        const ext = (mimeType && mimeType.includes('webm')) ? 'webm' : 'mp4';
+        const form = new FormData();
+        form.append('file', blob, `audio.${ext}`);
+        form.append('model', 'whisper-large-v3-turbo');
+        form.append('language', langCode);
+        form.append('response_format', 'json');
+
+        const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${key}` },
+          body: form
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const text = (data.text || '').trim();
+        if (!text || text.length < 2) return;
+
+        currentSrc = text;
+        document.getElementById('srcText').textContent = document.getElementById('showOrig').checked ? text : '';
         drawPiPCanvas();
+        await translateText(text);
+      } catch (_) {}
+    }
 
-        clearTimeout(translateTimer);
-        const isFinal = event.results[event.results.length - 1].isFinal;
-        translateTimer = setTimeout(() => translateText(transcript), isFinal ? 100 : 650);
+    // โหมด 2: ใช้ระบบรู้จำเสียงในเบราว์เซอร์ (สำหรับโหมดฟรีไม่ใส่ API Key)
+    function startBrowserSpeechRec(SpeechRec) {
+      isListening = true;
+      document.getElementById('startBtn').textContent = 'หยุดการฟัง';
+      document.getElementById('startBtn').classList.add('stop');
+      setStatus('● กำลังขอสิทธิ์ไมโครโฟน...', '#fbbf24');
+      revealWebMenu();
+
+      const launchRec = () => {
+        if (!isListening) return;
+        recognition = new SpeechRec();
+        recognition.lang = document.getElementById('langSelect').value;
+        // บน iOS Safari ต้องปิด continuous แล้วใช้วิธีรีสตาร์ทใน onend แทน เพื่อป้องกันบั๊กค้าง
+        recognition.continuous = !isIOS;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => {
+          setStatus('● กำลังฟังเสียงสด...', '#34d399');
+        };
+
+        recognition.onresult = (event) => {
+          let transcript = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            transcript += event.results[i][0].transcript;
+          }
+          transcript = transcript.trim();
+          if (!transcript) return;
+
+          currentSrc = transcript;
+          document.getElementById('srcText').textContent = document.getElementById('showOrig').checked ? transcript : '';
+          drawPiPCanvas();
+
+          clearTimeout(translateTimer);
+          const isFinal = event.results[event.results.length - 1].isFinal;
+          translateTimer = setTimeout(() => translateText(transcript), isFinal ? 80 : 600);
+        };
+
+        recognition.onerror = (e) => {
+          if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+            setStatus('● ถูกบล็อกไมโครโฟน (เปิดการป้อนตามคำบอกในตั้งค่า iOS หรือใส่ Groq Key)', '#f87171');
+            isListening = false;
+            document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
+            document.getElementById('startBtn').classList.remove('stop');
+          }
+        };
+
+        recognition.onend = () => {
+          if (isListening) {
+            clearTimeout(restartTimer);
+            restartTimer = setTimeout(launchRec, isIOS ? 150 : 50);
+          }
+        };
+
+        try {
+          recognition.start();
+        } catch (_) {
+          restartTimer = setTimeout(launchRec, 300);
+        }
       };
 
-      recognition.onend = () => {
-        if (isListening) recognition.start();
-      };
-
-      recognition.start();
+      launchRec();
     }
 
     function drawPiPCanvas() {
@@ -355,8 +538,8 @@
         ctx.fillText(currentSrc.slice(-45), 24, 48);
       }
 
-      ctx.font = 'bold 30px sans-serif';
-      wrapOutlinedText(ctx, currentTh, 24, 105, canvas.width - 48, 40);
+      ctx.font = 'bold 31px sans-serif';
+      wrapOutlinedText(ctx, currentTh, 24, 105, canvas.width - 48, 42);
     }
 
     function wrapOutlinedText(ctx, text, x, y, maxWidth, lineHeight) {
@@ -388,19 +571,30 @@
     async function openPiP() {
       try {
         drawPiPCanvas();
+        if (!pipInterval) {
+          pipInterval = setInterval(drawPiPCanvas, 250);
+        }
         const canvas = document.getElementById('pipCanvas');
         const video = document.getElementById('pipVideo');
         if (!video.srcObject) {
-          video.srcObject = canvas.captureStream(10);
+          const stream = canvas.captureStream ? canvas.captureStream(15) : canvas.webkitCaptureStream(15);
+          video.srcObject = stream;
         }
         await video.play();
-        if (document.pictureInPictureElement) {
+
+        // รองรับคำสั่ง PiP เฉพาะของ iOS Safari
+        if (typeof video.webkitSetPresentationMode === 'function') {
+          const targetMode = video.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture';
+          video.webkitSetPresentationMode(targetMode);
+        } else if (document.pictureInPictureElement) {
           await document.exitPictureInPicture();
-        } else {
+        } else if (video.requestPictureInPicture) {
           await video.requestPictureInPicture();
+        } else {
+          throw new Error('PiP unsupported');
         }
       } catch (e) {
-        alert('อุปกรณ์นี้ไม่รองรับหน้าต่างลอย PiP อัตโนมัติ สามารถเปิดหน้าเว็บนี้ค้างไว้แบบแบ่งครึ่งหน้าจอ (Split View) ได้เลยครับ');
+        alert('ไม่สามารถเปิดหน้าต่างลอยได้ กรุณาตรวจสอบว่าเปิดหน้าเว็บนี้ผ่านแอป "Safari" บน iPhone/iPad (Chrome บน iOS ไม่รองรับ PiP)');
       }
     }
   </script>
