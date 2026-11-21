@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Live Subtitle Web (iOS & Desktop)</title>
+  <style>
+    :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --primary: #2563eb; }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { margin: 0; background: var(--bg); color: #fff; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+    .container { width: 100%; max-width: 680px; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    p.sub { color: #94a3b8; font-size: 13px; margin: 0 0 18px; }
+    .panel { background: var(--card); border: 1px solid #334155; border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+    select, input[type="text"] {
+      background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 10px;
+      padding: 10px 12px; font-size: 14px; flex: 1; min-width: 140px;
+    }
+    button {
+      background: var(--primary); color: #fff; border: none; border-radius: 10px;
+      padding: 11px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    button.stop { background: #dc2626; }
+    button.pip { background: #0284c7; }
+    button.secondary { background: #334155; }
+    .slider-group { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #cbd5e1; }
+    #subBox {
+      width: 100%; min-height: 150px; border-radius: 18px; padding: 18px 20px;
+      border: 2px solid rgba(56, 189, 248, 0.75);
+      background: rgba(15, 23, 42, 0.88);
+      resize: both; overflow: auto; transition: background 0.15s;
+    }
+    #status { font-size: 12px; color: #34d399; margin-bottom: 8px; }
+    #srcText { font-size: 14px; color: #94a3b8; margin-bottom: 6px; min-height: 18px; }
+    #prevTh { font-size: 15px; color: #cbd5e1; margin-bottom: 6px; }
+    #thText { font-size: 20px; font-weight: 700; line-height: 1.45; color: #ffffff; }
+    .note { font-size: 12px; color: #94a3b8; margin-top: 12px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Live Subtitle Web (iOS / iPad / PC)</h1>
+    <p class="sub">แปลเสียงสดเป็นซับไทย พร้อมโหมดหน้าต่างลอย Picture-in-Picture สำหรับ iOS</p>
+
+    <div class="panel">
+      <div class="row">
+        <select id="langSelect">
+          <option value="ja-JP">ญี่ปุ่น (JP) → ไทย</option>
+          <option value="en-US">อังกฤษ (EN) → ไทย</option>
+          <option value="ko-KR">เกาหลี (KO) → ไทย</option>
+        </select>
+        <button id="startBtn" onclick="toggleListen()">เริ่มฟังและแปลสด</button>
+        <button class="pip" onclick="openPiP()">หน้าต่างลอย (PiP)</button>
+      </div>
+
+      <div class="row">
+        <input type="text" id="groqKey" placeholder="Groq API Key (ไม่บังคับ - ใส่เพื่อให้แปลสำนวนธรรมชาติ)" />
+      </div>
+
+      <div class="row" style="justify-content: space-between; margin-bottom: 0;">
+        <div class="slider-group">
+          <span>ความเข้มพื้นหลัง:</span>
+          <input type="range" id="opacityRange" min="15" max="98" value="88" oninput="updateOpacity(this.value)" />
+        </div>
+        <div class="slider-group">
+          <button class="secondary" onclick="changeFont(-2)">A-</button>
+          <button class="secondary" onclick="changeFont(2)">A+</button>
+          <label><input type="checkbox" id="showOrig" checked /> โชว์ต้นฉบับ</label>
+        </div>
+      </div>
+    </div>
+
+    <div id="subBox">
+      <div id="status">● พร้อมใช้งาน (กด "เริ่มฟังและแปลสด")</div>
+      <div id="srcText"></div>
+      <div id="prevTh"></div>
+      <div id="thText">เปิดเสียงวิดีโอใกล้ไมค์ หรือเปิดหน้าต่างลอย PiP บน iPad/iPhone ได้เลย</div>
+    </div>
+
+    <p class="note">
+      <b>วิธีใช้บน iPhone / iPad (Safari):</b> กด <b>เริ่มฟังและแปลสด</b> แล้วกดปุ่ม <b>หน้าต่างลอย (PiP)</b> จากนั้นปัดสลับไปเปิดแอปวิดีโอหรือเบราว์เซอร์ได้เลย กล่องซับจะลอยทับหน้าจอให้อัตโนมัติ (สามารถลากมุมขวาล่างของกล่องเพื่อย่อ–ขยายขนาดได้)
+    </p>
+  </div>
+
+  <canvas id="pipCanvas" width="720" height="240" style="display:none;"></canvas>
+  <video id="pipVideo" playsinline muted style="display:none;"></video>
+
+  <script>
+    let recognition = null;
+    let isListening = false;
+    let fontSize = 20;
+    let currentTh = "รอเสียงพูด...";
+    let prevTh = "";
+    let currentSrc = "";
+    let translateTimer = null;
+    let lastTranslatedSrc = "";
+
+    const groqInput = document.getElementById('groqKey');
+    groqInput.value = localStorage.getItem('web_groq_key') || '';
+    groqInput.addEventListener('change', () => localStorage.setItem('web_groq_key', groqInput.value.trim()));
+
+    function updateOpacity(val) {
+      document.getElementById('subBox').style.background = `rgba(15, 23, 42, ${val / 100})`;
+    }
+
+    function changeFont(delta) {
+      fontSize = Math.min(34, Math.max(14, fontSize + delta));
+      document.getElementById('thText').style.fontSize = fontSize + 'px';
+    }
+
+    async function translateText(text) {
+      if (!text || text === lastTranslatedSrc) return;
+      lastTranslatedSrc = text;
+      const key = groqInput.value.trim();
+
+      if (key) {
+        try {
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'llama-3.3-70b-versatile',
+              temperature: 0.3,
+              max_tokens: 120,
+              messages: [
+                { role: 'system', content: 'แปลประโยคต่อไปนี้เป็นซับไตเติลภาษาพูดไทยที่เข้าใจง่าย เป็นธรรมชาติ กระชับ ตอบเฉพาะคำแปลไทยเท่านั้น' },
+                { role: 'user', content: text }
+              ]
+            })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setSubtitle(data.choices[0].message.content.trim());
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // ระบบแปลฟรีอัตโนมัติ (ไม่ต้องใช้ API Key)
+      try {
+        const sl = document.getElementById('langSelect').value.split('-')[0];
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=th&dt=t&q=${encodeURIComponent(text)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const translated = data[0].map(item => item[0]).join('');
+        setSubtitle(translated);
+      } catch (e) {
+        document.getElementById('status').textContent = '● ขัดข้องชั่วคราว กำลังฟังต่อ...';
+      }
+    }
+
+    function setSubtitle(th) {
+      if (currentTh && currentTh !== th && currentTh !== "รอเสียงพูด...") {
+        prevTh = currentTh;
+        document.getElementById('prevTh').textContent = prevTh;
+      }
+      currentTh = th;
+      document.getElementById('thText').textContent = th;
+      drawPiPCanvas();
+    }
+
+    function toggleListen() {
+      const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRec) {
+        alert('เบราว์เซอร์นี้ไม่รองรับการถอดเสียงสด กรุณาเปิดผ่าน Safari (iOS) หรือ Google Chrome');
+        return;
+      }
+      if (isListening) {
+        isListening = false;
+        if (recognition) recognition.stop();
+        document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
+        document.getElementById('startBtn').classList.remove('stop');
+        document.getElementById('status').textContent = '● หยุดฟังแล้ว';
+        return;
+      }
+
+      recognition = new SpeechRec();
+      recognition.lang = document.getElementById('langSelect').value;
+      recognition.continuous = true;
+      recognition.interimResults = true;
+
+      recognition.onstart = () => {
+        isListening = true;
+        document.getElementById('startBtn').textContent = 'หยุดการฟัง';
+        document.getElementById('startBtn').classList.add('stop');
+        document.getElementById('status').textContent = '● กำลังฟังเสียงสด...';
+      };
+
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        transcript = transcript.trim();
+        if (!transcript) return;
+
+        currentSrc = transcript;
+        document.getElementById('srcText').textContent = document.getElementById('showOrig').checked ? transcript : '';
+        drawPiPCanvas();
+
+        clearTimeout(translateTimer);
+        const isFinal = event.results[event.results.length - 1].isFinal;
+        translateTimer = setTimeout(() => translateText(transcript), isFinal ? 100 : 650);
+      };
+
+      recognition.onend = () => {
+        if (isListening) recognition.start();
+      };
+
+      recognition.start();
+    }
+
+    function drawPiPCanvas() {
+      const canvas = document.getElementById('pipCanvas');
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 4;
+      ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+
+      if (document.getElementById('showOrig').checked && currentSrc) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '22px sans-serif';
+        ctx.fillText(currentSrc.slice(-45), 24, 48);
+      }
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 30px sans-serif';
+      wrapText(ctx, currentTh, 24, 105, canvas.width - 48, 40);
+    }
+
+    function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+      const chars = text.split('');
+      let line = '';
+      let curY = y;
+      for (let n = 0; n < chars.length; n++) {
+        const testLine = line + chars[n];
+        if (ctx.measureText(testLine).width > maxWidth && n > 0) {
+          ctx.fillText(line, x, curY);
+          line = chars[n];
+          curY += lineHeight;
+        } else {
+          line = testLine;
+        }
+      }
+      ctx.fillText(line, x, curY);
+    }
+
+    async function openPiP() {
+      try {
+        drawPiPCanvas();
+        const canvas = document.getElementById('pipCanvas');
+        const video = document.getElementById('pipVideo');
+        if (!video.srcObject) {
+          video.srcObject = canvas.captureStream(10);
+        }
+        await video.play();
+        if (document.pictureInPictureElement) {
+          await document.exitPictureInPicture();
+        } else {
+          await video.requestPictureInPicture();
+        }
+      } catch (e) {
+        alert('อุปกรณ์นี้ไม่รองรับหน้าต่างลอย PiP อัตโนมัติ สามารถเปิดหน้าเว็บนี้ค้างไว้แบบแบ่งครึ่งหน้าจอ (Split View) ได้เลยครับ');
+      }
+    }
+  </script>
+</body>
+</html>
