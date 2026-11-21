@@ -1,4 +1,4 @@
-name: Build Live Subtitle v1.0 & Web App
+name: Build Live Subtitle & Web App
 
 on:
   workflow_dispatch:
@@ -58,7 +58,7 @@ jobs:
                   mavenCentral()
               }
           }
-          rootProject.name = "JPTHLiveSub"
+          rootProject.name = "LiveSubtitle"
           include(":app")
           EOF
 
@@ -158,7 +158,7 @@ jobs:
                   android:allowBackup="true"
                   android:icon="@mipmap/ic_launcher"
                   android:roundIcon="@mipmap/ic_launcher_round"
-                  android:label="JP-TH Live Sub"
+                  android:label="Live Subtitle"
                   android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
                   <activity
                       android:name=".MainActivity"
@@ -193,7 +193,9 @@ jobs:
           import android.os.Build
           import android.os.Bundle
           import android.provider.Settings
+          import android.view.Gravity
           import android.view.View
+          import android.view.ViewGroup
           import android.widget.*
           import com.google.mlkit.common.model.DownloadConditions
           import com.google.mlkit.nl.translate.TranslateLanguage
@@ -227,18 +229,25 @@ jobs:
                   }
 
                   val title = TextView(this).apply {
-                      text = "Live Subtitle v1.0"
-                      textSize = 24f
+                      text = "Live Subtitle"
+                      textSize = 26f
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
-                      setPadding(0, 0, 0, 10)
+                      setPadding(0, 0, 0, 8)
                   }
 
                   val desc = TextView(this).apply {
-                      text = "ซับไตเติลลอยจออัจฉริยะ รองรับทุกแอปวิดีโอและสื่อเสียงบนเครื่อง"
+                      text = "ซับไตเติลแปลสดลอยหน้าจอ รองรับทุกแอปวิดีโอและสื่อเสียง"
                       textSize = 14f
                       setTextColor(Color.parseColor("#94A3B8"))
-                      setPadding(0, 0, 0, 36)
+                      setPadding(0, 0, 0, 32)
+                  }
+
+                  val langTitle = TextView(this).apply {
+                      text = "เลือกภาษาต้นฉบับที่ต้องการแปล"
+                      textSize = 12f
+                      setTextColor(Color.parseColor("#38BDF8"))
+                      setPadding(8, 0, 8, 10)
                   }
 
                   val boxBg = GradientDrawable().apply {
@@ -247,20 +256,44 @@ jobs:
                       setStroke(2, Color.parseColor("#334155"))
                   }
 
-                  langSpinner = Spinner(this).apply {
+                  val spinnerContainer = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.CENTER_VERTICAL
                       background = boxBg
-                      setPadding(24, 24, 24, 24)
-                      adapter = ArrayAdapter(
+                      setPadding(24, 6, 24, 6)
+                  }
+
+                  langSpinner = Spinner(this).apply {
+                      layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                      setBackgroundColor(Color.TRANSPARENT)
+                      adapter = object : ArrayAdapter<String>(
                           this@MainActivity,
-                          android.R.layout.simple_spinner_dropdown_item,
+                          android.R.layout.simple_spinner_item,
                           langLabels
-                      ).apply {
-                          setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                      ) {
+                          override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+                              val tv = (convertView as? TextView) ?: TextView(this@MainActivity)
+                              tv.text = langLabels[position]
+                              tv.setTextColor(Color.WHITE)
+                              tv.textSize = 15f
+                              tv.setTypeface(null, Typeface.BOLD)
+                              tv.setPadding(8, 24, 8, 24)
+                              return tv
+                          }
+
+                          override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
+                              val tv = (convertView as? TextView) ?: TextView(this@MainActivity)
+                              tv.text = langLabels[position]
+                              tv.setTextColor(Color.WHITE)
+                              tv.setBackgroundColor(Color.parseColor("#1E293B"))
+                              tv.textSize = 15f
+                              tv.setPadding(36, 30, 36, 30)
+                              return tv
+                          }
                       }
                       setSelection(langCodes.indexOf(selectedLangCode).coerceAtLeast(0))
                       onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
                           override fun onItemSelected(parent: AdapterView<*>?, view: View?, pos: Int, id: Long) {
-                              (view as? TextView)?.setTextColor(Color.WHITE)
                               selectedLangCode = langCodes[pos]
                               prefs.edit().putString("src_lang", selectedLangCode).apply()
                               prepareOfflineLanguagePack(selectedLangCode)
@@ -269,11 +302,22 @@ jobs:
                       }
                   }
 
+                  val arrowIcon = TextView(this).apply {
+                      text = "▼"
+                      textSize = 13f
+                      setTextColor(Color.parseColor("#38BDF8"))
+                      setPadding(12, 0, 4, 0)
+                      setOnClickListener { langSpinner.performClick() }
+                  }
+
+                  spinnerContainer.addView(langSpinner)
+                  spinnerContainer.addView(arrowIcon)
+
                   val groqLabel = TextView(this).apply {
                       text = "โหมดแปลตามบริบทสำนวนธรรมชาติ (ไม่บังคับ - เว้นว่างเพื่อใช้ออฟไลน์ 100%)"
                       textSize = 12f
                       setTextColor(Color.parseColor("#38BDF8"))
-                      setPadding(8, 32, 8, 10)
+                      setPadding(8, 28, 8, 10)
                   }
 
                   val inputBg = GradientDrawable().apply {
@@ -343,7 +387,8 @@ jobs:
 
                   root.addView(title)
                   root.addView(desc)
-                  root.addView(langSpinner)
+                  root.addView(langTitle)
+                  root.addView(spinnerContainer)
                   root.addView(groqLabel)
                   root.addView(groqKeyInput)
                   root.addView(bilingualSwitch)
@@ -1017,7 +1062,6 @@ jobs:
                                   warnedSilence = true
                               }
 
-                              // จับเสียงพูดแม้เปิดระดับเสียงเบา (rms > 22) แล้วให้โมเดล SenseVoice คัดกรองเสียงดนตรีออกเอง
                               if (rms > 22.0) {
                                   lastSoundT = now
                                   if (!hasSound && now - lastUiUpdate > 250) {
@@ -1094,7 +1138,6 @@ jobs:
                           val rawText = rec.getResult(stream).text
                           stream.release()
 
-                          // ตัดแท็กเสียงดนตรี/เสียงประกอบ <|BGM|> <|NOSPEECH|> ของ SenseVoice ออก
                           val cleanSrc = rawText.replace(Regex("<\\|[^|]+\\|>"), "").trim()
                           if (cleanSrc.any { it.isLetterOrDigit() }) {
                               val historySnapshot = synchronized(contextHistory) { ArrayList(contextHistory) }
@@ -1222,7 +1265,7 @@ jobs:
 
                   val actionIcon = Icon.createWithResource(this, R.drawable.ic_launcher_foreground)
                   val notif = Notification.Builder(this, NOTIF_CHANNEL_ID)
-                      .setContentTitle("Live Subtitle v1.0")
+                      .setContentTitle("Live Subtitle")
                       .setContentText(contentText)
                       .setSmallIcon(R.drawable.ic_launcher_foreground)
                       .setContentIntent(unlockPi)
@@ -1257,14 +1300,14 @@ jobs:
           }
           EOF
 
-          # สร้างหน้า Web App (index.html) เวอร์ชัน 1.0 สำหรับ iOS Safari & Desktop
+          # สร้างหน้า Web App (index.html) สำหรับคอมพิวเตอร์ (PC / Mac)
           cat << 'EOF' > index.html
           <!DOCTYPE html>
           <html lang="th">
           <head>
             <meta charset="UTF-8" />
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-            <title>Live Subtitle v1.0 (iOS & Desktop)</title>
+            <title>Live Subtitle</title>
             <style>
               :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --primary: #2563eb; }
               * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -1320,7 +1363,6 @@ jobs:
                 background: rgba(6, 11, 22, 0.95); color: #38bdf8; border: 1px solid #38bdf8;
                 border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700;
               }
-              .note { font-size: 12px; color: #94a3b8; margin-top: 10px; line-height: 1.5; }
               #pipVideo {
                 position: fixed; right: 2px; bottom: 2px; width: 2px; height: 2px;
                 opacity: 0.01; pointer-events: none; z-index: -1;
@@ -1329,8 +1371,8 @@ jobs:
           </head>
           <body>
             <div class="container">
-              <h1>Live Subtitle v1.0 (iOS / iPad / PC)</h1>
-              <p class="sub">รองรับหน้าต่างลอย PiP บน Safari • ซ่อนเมนูอัตโนมัติใน 5 วินาที</p>
+              <h1>Live Subtitle</h1>
+              <p class="sub">ซับไตเติลแปลสดพร้อมหน้าต่างลอย (PiP) • ซ่อนเมนูอัตโนมัติใน 5 วินาที</p>
 
               <div class="panel" id="controlPanel">
                 <div class="row">
@@ -1345,7 +1387,7 @@ jobs:
                 </div>
 
                 <div class="row">
-                  <input type="text" id="groqKey" placeholder="Groq API Key (แนะนำสำหรับ iOS - ช่วยแกะเสียงและแปลตามบริบทแม่นยำ)" />
+                  <input type="text" id="groqKey" placeholder="Groq API Key (ไม่บังคับ - ช่วยแปลตามบริบทสำนวนธรรมชาติ)" />
                 </div>
 
                 <div class="row" style="justify-content: space-between; margin-bottom: 0;">
@@ -1365,13 +1407,9 @@ jobs:
                 <div id="status" class="outline-text">● พร้อมใช้งาน (กด "เริ่มฟังและแปลสด")</div>
                 <div id="srcText" class="outline-text"></div>
                 <div id="prevTh" class="outline-text"></div>
-                <div id="thText" class="outline-text">เปิดผ่าน Safari บน iPhone/iPad กดเริ่มฟัง แล้วกด "หน้าต่างลอย (PiP)" ได้เลย</div>
+                <div id="thText" class="outline-text">กดปุ่ม "เริ่มฟังและแปลสด" เพื่อเริ่มใช้งาน</div>
                 <div id="webResizeHandle">⤢ ขยาย</div>
               </div>
-
-              <p class="note">
-                <b>คำแนะนำสำหรับ iPhone / iPad:</b> ต้องเปิดลิงก์นี้ผ่านแอป <b>Safari</b> เท่านั้นจึงจะกดปุ่ม <b>หน้าต่างลอย (PiP)</b> ลอยข้ามแอปได้ (หากใส่ Groq API Key ระบบจะใช้ AI Whisper แกะเสียงซึ่งแม่นยำและเสถียรกว่าไมค์ปกติของ iOS มาก)
-              </p>
             </div>
 
             <button id="floatingUnlockBtn" onclick="toggleWebLock()">🔒 ปลดล็อกกล่องซับ</button>
@@ -1393,9 +1431,6 @@ jobs:
               let pipInterval = null;
               let lastTranslatedSrc = "";
               let hideMenuTimer = null;
-              let mediaStream = null;
-              let audioCtx = null;
-              let analyser = null;
               const contextHistory = [];
 
               const groqInput = document.getElementById('groqKey');
@@ -1560,165 +1595,29 @@ jobs:
                 drawPiPCanvas();
               }
 
-              function stopAllListening() {
-                isListening = false;
-                clearTimeout(restartTimer);
-                if (recognition) {
-                  try { recognition.onend = null; recognition.stop(); } catch (_) {}
-                  recognition = null;
-                }
-                if (mediaStream) {
-                  mediaStream.getTracks().forEach(t => t.stop());
-                  mediaStream = null;
-                }
-                if (audioCtx) {
-                  try { audioCtx.close(); } catch (_) {}
-                  audioCtx = null;
-                }
-                document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
-                document.getElementById('startBtn').classList.remove('stop');
-                setStatus('● หยุดฟังแล้ว', '#94a3b8');
-                revealWebMenu();
-              }
-
-              async function toggleListen() {
-                if (isListening) {
-                  stopAllListening();
-                  return;
-                }
-
-                const key = groqInput.value.trim();
+              function toggleListen() {
                 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-                if (key && (isIOS || !SpeechRec)) {
-                  await startGroqWhisperLoop(key);
-                  return;
-                }
-
                 if (!SpeechRec) {
-                  alert('เบราว์เซอร์นี้ไม่รองรับการถอดเสียงอัตโนมัติ กรุณาเปิดผ่าน Safari บน iOS หรือวาง Groq API Key ด้านบนเพื่อใช้งานได้ทุกเบราว์เซอร์');
+                  alert('เบราว์เซอร์นี้ไม่รองรับการถอดเสียง กรุณาเปิดด้วย Google Chrome หรือ Edge');
                   return;
                 }
-
-                startBrowserSpeechRec(SpeechRec);
-              }
-
-              async function startGroqWhisperLoop(key) {
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                  alert('เบราว์เซอร์ไม่อนุญาตให้เข้าถึงไมโครโฟน กรุณาเปิดผ่าน Safari');
-                  return;
-                }
-
-                try {
-                  mediaStream = await navigator.mediaDevices.getUserMedia({
-                    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: true }
-                  });
-                } catch (err) {
-                  setStatus('● ไม่ได้รับอนุญาตใช้ไมโครโฟน (กรุณากดอนุญาตใน Safari)', '#f87171');
-                  return;
-                }
-
-                isListening = true;
-                document.getElementById('startBtn').textContent = 'หยุดการฟัง';
-                document.getElementById('startBtn').classList.add('stop');
-                setStatus('● กำลังฟังด้วย AI Whisper (iOS Ready)...', '#34d399');
-                revealWebMenu();
-
-                try {
-                  const AudioContextCls = window.AudioContext || window.webkitAudioContext;
-                  audioCtx = new AudioContextCls();
-                  const srcNode = audioCtx.createMediaStreamSource(mediaStream);
-                  analyser = audioCtx.createAnalyser();
-                  analyser.fftSize = 512;
-                  srcNode.connect(analyser);
-                } catch (_) {}
-
-                const mimeType = (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/webm'))
-                  ? 'audio/webm'
-                  : (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '');
-
-                while (isListening && mediaStream) {
-                  const blob = await recordOneChunk(mediaStream, mimeType, 2800);
-                  if (!isListening || !blob || blob.size < 1200) continue;
-
-                  transcribeAndTranslateBlob(blob, mimeType, key);
-                }
-              }
-
-              function recordOneChunk(stream, mimeType, durationMs) {
-                return new Promise(resolve => {
-                  try {
-                    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-                    const chunks = [];
-                    let hadSound = false;
-
-                    const checkTimer = setInterval(() => {
-                      if (!analyser) { hadSound = true; return; }
-                      const data = new Uint8Array(analyser.frequencyBinCount);
-                      analyser.getByteTimeDomainData(data);
-                      let sum = 0;
-                      for (let i = 0; i < data.length; i++) {
-                        const v = (data[i] - 128) / 128;
-                        sum += v * v;
-                      }
-                      const rms = Math.sqrt(sum / data.length);
-                      if (rms > 0.012) hadSound = true;
-                    }, 120);
-
-                    recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
-                    recorder.onstop = () => {
-                      clearInterval(checkTimer);
-                      if (!hadSound) {
-                        resolve(null);
-                      } else {
-                        resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'audio/mp4' }));
-                      }
-                    };
-
-                    recorder.start();
-                    setTimeout(() => {
-                      if (recorder.state !== 'inactive') {
-                        try { recorder.stop(); } catch (_) { resolve(null); }
-                      }
-                    }, durationMs);
-                  } catch (e) {
-                    setTimeout(() => resolve(null), 500);
+                if (isListening) {
+                  isListening = false;
+                  clearTimeout(restartTimer);
+                  if (recognition) {
+                    try { recognition.onend = null; recognition.stop(); } catch (_) {}
                   }
-                });
-              }
+                  document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
+                  document.getElementById('startBtn').classList.remove('stop');
+                  setStatus('● หยุดฟังแล้ว', '#94a3b8');
+                  revealWebMenu();
+                  return;
+                }
 
-              async function transcribeAndTranslateBlob(blob, mimeType, key) {
-                try {
-                  const langCode = document.getElementById('langSelect').value.split('-')[0];
-                  const ext = (mimeType && mimeType.includes('webm')) ? 'webm' : 'mp4';
-                  const form = new FormData();
-                  form.append('file', blob, `audio.${ext}`);
-                  form.append('model', 'whisper-large-v3-turbo');
-                  form.append('language', langCode);
-                  form.append('response_format', 'json');
-
-                  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${key}` },
-                    body: form
-                  });
-                  if (!res.ok) return;
-                  const data = await res.json();
-                  const text = (data.text || '').trim();
-                  if (!text || text.length < 2) return;
-
-                  currentSrc = text;
-                  document.getElementById('srcText').textContent = document.getElementById('showOrig').checked ? text : '';
-                  drawPiPCanvas();
-                  await translateText(text);
-                } catch (_) {}
-              }
-
-              function startBrowserSpeechRec(SpeechRec) {
                 isListening = true;
                 document.getElementById('startBtn').textContent = 'หยุดการฟัง';
                 document.getElementById('startBtn').classList.add('stop');
-                setStatus('● กำลังขอสิทธิ์ไมโครโฟน...', '#fbbf24');
+                setStatus('● กำลังฟังเสียงสด...', '#34d399');
                 revealWebMenu();
 
                 const launchRec = () => {
@@ -1727,10 +1626,6 @@ jobs:
                   recognition.lang = document.getElementById('langSelect').value;
                   recognition.continuous = !isIOS;
                   recognition.interimResults = true;
-
-                  recognition.onstart = () => {
-                    setStatus('● กำลังฟังเสียงสด...', '#34d399');
-                  };
 
                   recognition.onresult = (event) => {
                     let transcript = '';
@@ -1749,27 +1644,14 @@ jobs:
                     translateTimer = setTimeout(() => translateText(transcript), isFinal ? 80 : 600);
                   };
 
-                  recognition.onerror = (e) => {
-                    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                      setStatus('● ถูกบล็อกไมโครโฟน (เปิดการป้อนตามคำบอกในตั้งค่า iOS หรือใส่ Groq Key)', '#f87171');
-                      isListening = false;
-                      document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
-                      document.getElementById('startBtn').classList.remove('stop');
-                    }
-                  };
-
                   recognition.onend = () => {
                     if (isListening) {
                       clearTimeout(restartTimer);
-                      restartTimer = setTimeout(launchRec, isIOS ? 150 : 50);
+                      restartTimer = setTimeout(launchRec, 80);
                     }
                   };
 
-                  try {
-                    recognition.start();
-                  } catch (_) {
-                    restartTimer = setTimeout(launchRec, 300);
-                  }
+                  try { recognition.start(); } catch (_) { restartTimer = setTimeout(launchRec, 250); }
                 };
 
                 launchRec();
@@ -1845,11 +1727,9 @@ jobs:
                     await document.exitPictureInPicture();
                   } else if (video.requestPictureInPicture) {
                     await video.requestPictureInPicture();
-                  } else {
-                    throw new Error('PiP unsupported');
                   }
                 } catch (e) {
-                  alert('ไม่สามารถเปิดหน้าต่างลอยได้ กรุณาตรวจสอบว่าเปิดหน้าเว็บนี้ผ่านแอป "Safari" บน iPhone/iPad (Chrome บน iOS ไม่รองรับ PiP)');
+                  alert('เบราว์เซอร์นี้ไม่รองรับหน้าต่างลอย (PiP)');
                 }
               }
             </script>
@@ -1860,7 +1740,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Release v1.0 fix audio capture sensitivity threshold [skip ci]" || true
+          git commit -m "Rename app to Live Subtitle and fix language selector visibility [skip ci]" || true
           git push || true
 
       - name: Set up JDK 17
@@ -1880,5 +1760,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: JP-TH-Live-Sub
+          name: Live-Subtitle
           path: app/build/outputs/apk/debug/app-debug.apk
