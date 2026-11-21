@@ -1,15 +1,21 @@
-name: Build ViiTor Lite Offline APK
+name: Build ViiTor Lite & iOS Web App
 
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Generate Android Project & Download On-Device AI Models
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Generate Android Project & Web App
         run: |
           mkdir -p app/src/main/java/com/example/jpthtranslator
           mkdir -p app/src/main/res/values
@@ -25,7 +31,7 @@ jobs:
             curl -L -f -o app/libs/sherpa-onnx.aar "https://github.com/k2-fsa/sherpa-onnx/releases/download/v${TAG}/sherpa-onnx-${TAG}.aar"
           fi
 
-          # ดาวน์โหลดโมเดล AI แกะเสียง SenseVoice (รองรับ ญี่ปุ่น / อังกฤษ / เกาหลี / จีน)
+          # ดาวน์โหลดโมเดล AI แกะเสียง SenseVoice (JP / EN / KO)
           curl -L -f -o sensevoice.tar.bz2 "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2"
           tar -xjf sensevoice.tar.bz2
           cp sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/model.int8.onnx app/src/main/assets/
@@ -75,8 +81,8 @@ jobs:
                   applicationId = "com.example.jpthtranslator"
                   minSdk = 29
                   targetSdk = 34
-                  versionCode = 5
-                  versionName = "2.0-Offline"
+                  versionCode = 6
+                  versionName = "2.1"
                   ndk {
                       abiFilters += "arm64-v8a"
                   }
@@ -113,34 +119,12 @@ jobs:
               android:height="108dp"
               android:viewportWidth="108"
               android:viewportHeight="108">
-
-              <path
-                  android:fillColor="#2660A5FA"
-                  android:pathData="M54,16A38,38 0 1,1 54,92A38,38 0 1,1 54,16Z" />
-
-              <path
-                  android:fillColor="#0F172A"
-                  android:pathData="M30,30h34a6,6 0 0,1 6,6v20a6,6 0 0,1 -6,6h-22l-7,6v-6h-5a6,6 0 0,1 -6,-6v-20a6,6 0 0,1 6,-6z" />
-
-              <path
-                  android:strokeColor="#38BDF8"
-                  android:strokeWidth="3"
-                  android:strokeLineCap="round"
-                  android:pathData="M39,43v6 M45,39v14 M51,41v10 M57,44v4" />
-
-              <path
-                  android:fillColor="#FFFFFF"
-                  android:pathData="M42,48h36a6,6 0 0,1 6,6v18a6,6 0 0,1 -6,6h-6v6l-7,-6h-23a6,6 0 0,1 -6,-6v-18a6,6 0 0,1 6,-6z" />
-
-              <path
-                  android:strokeColor="#1E3A8A"
-                  android:strokeWidth="3.2"
-                  android:strokeLineCap="round"
-                  android:pathData="M49,59h22 M49,67h14" />
-
-              <path
-                  android:fillColor="#F59E0B"
-                  android:pathData="M71,67m-2.2,0a2.2,2.2 0 1,1 4.4,0a2.2,2.2 0 1,1 -4.4,0" />
+              <path android:fillColor="#2660A5FA" android:pathData="M54,16A38,38 0 1,1 54,92A38,38 0 1,1 54,16Z" />
+              <path android:fillColor="#0F172A" android:pathData="M30,30h34a6,6 0 0,1 6,6v20a6,6 0 0,1 -6,6h-22l-7,6v-6h-5a6,6 0 0,1 -6,-6v-20a6,6 0 0,1 6,-6z" />
+              <path android:strokeColor="#38BDF8" android:strokeWidth="3" android:strokeLineCap="round" android:pathData="M39,43v6 M45,39v14 M51,41v10 M57,44v4" />
+              <path android:fillColor="#FFFFFF" android:pathData="M42,48h36a6,6 0 0,1 6,6v18a6,6 0 0,1 -6,6h-6v6l-7,-6h-23a6,6 0 0,1 -6,-6v-18a6,6 0 0,1 6,-6z" />
+              <path android:strokeColor="#1E3A8A" android:strokeWidth="3.2" android:strokeLineCap="round" android:pathData="M49,59h22 M49,67h14" />
+              <path android:fillColor="#F59E0B" android:pathData="M71,67m-2.2,0a2.2,2.2 0 1,1 4.4,0a2.2,2.2 0 1,1 -4.4,0" />
           </vector>
           EOF
 
@@ -219,6 +203,7 @@ jobs:
           class MainActivity : Activity() {
 
               private lateinit var langSpinner: Spinner
+              private lateinit var groqKeyInput: EditText
               private lateinit var bilingualSwitch: Switch
               private lateinit var statusText: TextView
               private var selectedLangCode = "ja"
@@ -238,32 +223,32 @@ jobs:
                   val root = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
                       setBackgroundColor(Color.parseColor("#0F172A"))
-                      setPadding(56, 80, 56, 56)
+                      setPadding(56, 72, 56, 56)
                   }
 
                   val title = TextView(this).apply {
-                      text = "Live Subtitle (Offline AI)"
+                      text = "Live Subtitle v2.1"
                       textSize = 24f
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
-                      setPadding(0, 0, 0, 12)
+                      setPadding(0, 0, 0, 10)
                   }
 
                   val desc = TextView(this).apply {
-                      text = "ประมวลผลเสียงในตัวเครื่อง 100% ไม่ง้อ API Key และไม่จำกัดโควตา"
+                      text = "แกะเสียงในเครื่อง 100% + ปรับโปร่งใสและย่อขยายกรอบได้"
                       textSize = 14f
                       setTextColor(Color.parseColor("#94A3B8"))
-                      setPadding(0, 0, 0, 44)
+                      setPadding(0, 0, 0, 36)
                   }
 
-                  val spinnerBg = GradientDrawable().apply {
+                  val boxBg = GradientDrawable().apply {
                       setColor(Color.parseColor("#1E293B"))
                       cornerRadius = 24f
                       setStroke(2, Color.parseColor("#334155"))
                   }
 
                   langSpinner = Spinner(this).apply {
-                      background = spinnerBg
+                      background = boxBg
                       setPadding(24, 24, 24, 24)
                       adapter = ArrayAdapter(
                           this@MainActivity,
@@ -284,12 +269,36 @@ jobs:
                       }
                   }
 
+                  val groqLabel = TextView(this).apply {
+                      text = "โหมดแปลสำนวนธรรมชาติ (ไม่บังคับ - เว้นว่างเพื่อใช้ออฟไลน์ 100%)"
+                      textSize = 12f
+                      setTextColor(Color.parseColor("#38BDF8"))
+                      setPadding(8, 32, 8, 10)
+                  }
+
+                  val inputBg = GradientDrawable().apply {
+                      setColor(Color.parseColor("#1E293B"))
+                      cornerRadius = 24f
+                      setStroke(2, Color.parseColor("#334155"))
+                  }
+
+                  groqKeyInput = EditText(this).apply {
+                      hint = "วาง Groq API Key ฟรี (gsk_...) เพื่อให้แปลเข้าใจง่ายขึ้น"
+                      setHintTextColor(Color.parseColor("#64748B"))
+                      setTextColor(Color.WHITE)
+                      textSize = 14f
+                      setText(prefs.getString("groq_key", ""))
+                      background = inputBg
+                      setPadding(32, 26, 32, 26)
+                      setSingleLine()
+                  }
+
                   bilingualSwitch = Switch(this).apply {
                       text = "แสดงซับต้นฉบับคู่กับคำแปลไทย"
                       setTextColor(Color.WHITE)
                       textSize = 15f
                       isChecked = prefs.getBoolean("bilingual", false)
-                      setPadding(8, 44, 8, 44)
+                      setPadding(8, 32, 8, 36)
                   }
 
                   val startBtnBg = GradientDrawable().apply {
@@ -308,6 +317,7 @@ jobs:
                           prefs.edit()
                               .putBoolean("bilingual", bilingualSwitch.isChecked)
                               .putString("src_lang", selectedLangCode)
+                              .putString("groq_key", groqKeyInput.text.toString().trim())
                               .apply()
                           checkPermissionsAndStart()
                       }
@@ -317,7 +327,7 @@ jobs:
                       text = "หยุดการทำงาน"
                       setTextColor(Color.parseColor("#F87171"))
                       setBackgroundColor(Color.TRANSPARENT)
-                      setPadding(0, 28, 0, 28)
+                      setPadding(0, 24, 0, 24)
                       setOnClickListener {
                           stopService(Intent(this@MainActivity, LiveTranslateService::class.java))
                           statusText.text = "สถานะ: หยุดการทำงานแล้ว"
@@ -326,14 +336,16 @@ jobs:
 
                   statusText = TextView(this).apply {
                       text = "สถานะ: กำลังตรวจสอบชุดภาษาออฟไลน์..."
-                      textSize = 14f
+                      textSize = 13f
                       setTextColor(Color.parseColor("#38BDF8"))
-                      setPadding(0, 24, 0, 0)
+                      setPadding(0, 16, 0, 0)
                   }
 
                   root.addView(title)
                   root.addView(desc)
                   root.addView(langSpinner)
+                  root.addView(groqLabel)
+                  root.addView(groqKeyInput)
                   root.addView(bilingualSwitch)
                   root.addView(startBtn)
                   root.addView(stopBtn)
@@ -358,10 +370,9 @@ jobs:
                       .build()
 
                   val client = Translation.getClient(options)
-                  val conditions = DownloadConditions.Builder().build()
-                  client.downloadModelIfNeeded(conditions)
+                  client.downloadModelIfNeeded(DownloadConditions.Builder().build())
                       .addOnSuccessListener {
-                          statusText.text = "สถานะ: พร้อมใช้งานออฟไลน์ 100% (ไม่จำกัดโควตา)"
+                          statusText.text = "สถานะ: พร้อมใช้งาน (กด ◐ ปรับโปร่งใส / ลาก ⤢ ย่อขยาย)"
                           statusText.setTextColor(Color.parseColor("#34D399"))
                           client.close()
                       }
@@ -408,6 +419,7 @@ jobs:
                           putExtra("DATA", data)
                           putExtra("SRC_LANG", selectedLangCode)
                           putExtra("BILINGUAL", bilingualSwitch.isChecked)
+                          putExtra("GROQ_KEY", groqKeyInput.text.toString().trim())
                       }
                       startForegroundService(intent)
                       statusText.text = "กำลังทำงาน: เปิด Chrome เล่นวิดีโอได้เลย"
@@ -437,6 +449,7 @@ jobs:
           import android.os.Looper
           import android.view.*
           import android.widget.LinearLayout
+          import android.widget.ScrollView
           import android.widget.TextView
           import com.google.mlkit.common.model.DownloadConditions
           import com.google.mlkit.nl.translate.TranslateLanguage
@@ -451,7 +464,11 @@ jobs:
           import kotlinx.coroutines.*
           import kotlinx.coroutines.channels.BufferOverflow
           import kotlinx.coroutines.channels.Channel
+          import org.json.JSONArray
+          import org.json.JSONObject
           import java.io.ByteArrayOutputStream
+          import java.net.HttpURLConnection
+          import java.net.URL
           import kotlin.coroutines.resume
           import kotlin.math.sqrt
 
@@ -459,9 +476,13 @@ jobs:
 
               private lateinit var windowManager: WindowManager
               private lateinit var overlayRoot: LinearLayout
+              private lateinit var overlayBg: GradientDrawable
+              private lateinit var overlayParams: WindowManager.LayoutParams
               private lateinit var statusLabel: TextView
               private lateinit var srcTextView: TextView
+              private lateinit var prevThTextView: TextView
               private lateinit var thTextView: TextView
+              private lateinit var textScrollView: ScrollView
 
               private var mediaProjection: MediaProjection? = null
               private var audioRecord: AudioRecord? = null
@@ -469,9 +490,12 @@ jobs:
               private var translator: Translator? = null
 
               private var srcLang = "ja"
+              private var groqKey = ""
               private var showBilingual = false
               private var isPaused = false
               private var fontSize = 17f
+              private var bgAlpha = 225
+              private var lastTranslatedLine = ""
 
               private val mainHandler = Handler(Looper.getMainLooper())
               private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -482,6 +506,7 @@ jobs:
                   val resultCode = intent?.getIntExtra("RESULT_CODE", Activity.RESULT_CANCELED) ?: return START_NOT_STICKY
                   srcLang = intent.getStringExtra("SRC_LANG") ?: "ja"
                   showBilingual = intent.getBooleanExtra("BILINGUAL", false)
+                  groqKey = intent.getStringExtra("GROQ_KEY") ?: ""
 
                   val data: Intent? = if (Build.VERSION.SDK_INT >= 33) {
                       intent.getParcelableExtra("DATA", Intent::class.java)
@@ -509,133 +534,226 @@ jobs:
                   return START_STICKY
               }
 
+              private fun applyOverlayOpacity() {
+                  overlayBg.setColor(Color.argb(bgAlpha, 15, 23, 42))
+                  val strokeAlpha = (bgAlpha * 0.85).toInt().coerceIn(35, 255)
+                  overlayBg.setStroke(2, Color.argb(strokeAlpha, 56, 189, 248))
+              }
+
               @SuppressLint("ClickableViewAccessibility")
               private fun setupOverlay() {
                   windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
                   val sw = resources.displayMetrics.widthPixels
                   val sh = resources.displayMetrics.heightPixels
 
-                  val bg = GradientDrawable().apply {
-                      setColor(Color.parseColor("#EB0F172A"))
-                      cornerRadius = 32f
-                      setStroke(2, Color.parseColor("#38BDF8"))
+                  overlayBg = GradientDrawable().apply {
+                      cornerRadius = 28f
                   }
+                  applyOverlayOpacity()
 
                   overlayRoot = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
-                      background = bg
-                      setPadding(32, 18, 32, 22)
+                      background = overlayBg
+                      setPadding(28, 14, 24, 14)
                   }
 
                   val topBar = LinearLayout(this).apply {
                       orientation = LinearLayout.HORIZONTAL
                       gravity = Gravity.CENTER_VERTICAL
-                      setPadding(0, 0, 0, 8)
+                      setPadding(0, 0, 0, 6)
                   }
 
                   statusLabel = TextView(this).apply {
-                      text = "● กำลังโหลด AI ลงเครื่อง..."
-                      textSize = 12f
+                      text = "● โหลด AI..."
+                      textSize = 11f
                       setTextColor(Color.parseColor("#FBBF24"))
                       layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                   }
 
+                  val alphaDownBtn = TextView(this).apply {
+                      text = " ◐- "
+                      textSize = 12f
+                      setTextColor(Color.LTGRAY)
+                      setPadding(8, 4, 8, 4)
+                      setOnClickListener {
+                          bgAlpha = (bgAlpha - 35).coerceAtLeast(35)
+                          applyOverlayOpacity()
+                      }
+                  }
+
+                  val alphaUpBtn = TextView(this).apply {
+                      text = " ◐+ "
+                      textSize = 12f
+                      setTextColor(Color.LTGRAY)
+                      setPadding(8, 4, 8, 4)
+                      setOnClickListener {
+                          bgAlpha = (bgAlpha + 35).coerceAtMost(250)
+                          applyOverlayOpacity()
+                      }
+                  }
+
                   val fontDownBtn = TextView(this).apply {
                       text = " A- "
-                      textSize = 13f
+                      textSize = 12f
                       setTextColor(Color.LTGRAY)
-                      setPadding(12, 4, 12, 4)
+                      setPadding(8, 4, 8, 4)
                       setOnClickListener {
                           fontSize = (fontSize - 2f).coerceAtLeast(12f)
                           thTextView.textSize = fontSize
+                          prevThTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
                           srcTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
                       }
                   }
 
                   val fontUpBtn = TextView(this).apply {
                       text = " A+ "
-                      textSize = 13f
+                      textSize = 12f
                       setTextColor(Color.LTGRAY)
-                      setPadding(12, 4, 12, 4)
+                      setPadding(8, 4, 8, 4)
                       setOnClickListener {
                           fontSize = (fontSize + 2f).coerceAtMost(28f)
                           thTextView.textSize = fontSize
+                          prevThTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
                           srcTextView.textSize = (fontSize - 3f).coerceAtLeast(10f)
                       }
                   }
 
                   val pauseBtn = TextView(this).apply {
                       text = " ⏸ "
-                      textSize = 15f
+                      textSize = 14f
                       setTextColor(Color.WHITE)
-                      setPadding(14, 4, 14, 4)
+                      setPadding(10, 4, 10, 4)
                       setOnClickListener {
                           isPaused = !isPaused
                           text = if (isPaused) " ▶ " else " ⏸ "
-                          statusLabel.text = if (isPaused) "● หยุดแปลชั่วคราว" else "● พร้อมฟัง (ออฟไลน์)"
+                          statusLabel.text = if (isPaused) "● หยุดชั่วคราว" else "● พร้อมฟัง"
                           statusLabel.setTextColor(if (isPaused) Color.parseColor("#FBBF24") else Color.parseColor("#34D399"))
                       }
                   }
 
                   val closeBtn = TextView(this).apply {
                       text = " ✕"
-                      textSize = 16f
+                      textSize = 15f
                       setTextColor(Color.parseColor("#F87171"))
-                      setPadding(14, 4, 4, 4)
+                      setPadding(10, 4, 4, 4)
                       setOnClickListener { stopSelf() }
                   }
 
                   topBar.addView(statusLabel)
+                  topBar.addView(alphaDownBtn)
+                  topBar.addView(alphaUpBtn)
                   topBar.addView(fontDownBtn)
                   topBar.addView(fontUpBtn)
                   topBar.addView(pauseBtn)
                   topBar.addView(closeBtn)
+
+                  val textContainer = LinearLayout(this).apply {
+                      orientation = LinearLayout.VERTICAL
+                  }
 
                   srcTextView = TextView(this).apply {
                       text = ""
                       textSize = fontSize - 3f
                       setTextColor(Color.parseColor("#94A3B8"))
                       visibility = View.GONE
-                      setPadding(0, 0, 0, 6)
+                      setPadding(0, 0, 0, 4)
+                  }
+
+                  prevThTextView = TextView(this).apply {
+                      text = ""
+                      textSize = fontSize - 3f
+                      setTextColor(Color.parseColor("#CBD5E1"))
+                      visibility = View.GONE
+                      setPadding(0, 0, 0, 4)
                   }
 
                   thTextView = TextView(this).apply {
-                      text = "เปิดวิดีโอใน Chrome ได้เลย (ออฟไลน์ 100%)..."
+                      text = "เปิดวิดีโอใน Chrome ได้เลย (ลาก ⤢ มุมล่างขวาเพื่อย่อขยาย)"
                       textSize = fontSize
                       setTypeface(null, Typeface.BOLD)
                       setTextColor(Color.WHITE)
                   }
 
-                  overlayRoot.addView(topBar)
-                  overlayRoot.addView(srcTextView)
-                  overlayRoot.addView(thTextView)
+                  textContainer.addView(srcTextView)
+                  textContainer.addView(prevThTextView)
+                  textContainer.addView(thTextView)
 
-                  val params = WindowManager.LayoutParams(
-                      (sw * 0.92).toInt(),
+                  textScrollView = ScrollView(this).apply {
+                      layoutParams = LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT,
+                          LinearLayout.LayoutParams.WRAP_CONTENT,
+                          1f
+                      )
+                      addView(textContainer)
+                  }
+
+                  val bottomBar = LinearLayout(this).apply {
+                      orientation = LinearLayout.HORIZONTAL
+                      gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                  }
+
+                  val resizeHandle = TextView(this).apply {
+                      text = "⤢"
+                      textSize = 15f
+                      setTextColor(Color.parseColor("#38BDF8"))
+                      setPadding(16, 0, 2, 0)
+                  }
+
+                  bottomBar.addView(resizeHandle)
+
+                  overlayRoot.addView(topBar)
+                  overlayRoot.addView(textScrollView)
+                  overlayRoot.addView(bottomBar)
+
+                  overlayParams = WindowManager.LayoutParams(
+                      (sw * 0.90).toInt(),
                       WindowManager.LayoutParams.WRAP_CONTENT,
                       WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                       WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                       PixelFormat.TRANSLUCENT
                   ).apply {
                       gravity = Gravity.TOP or Gravity.START
-                      x = (sw * 0.04).toInt()
-                      y = sh - 400
+                      x = (sw * 0.05).toInt()
+                      y = sh - 420
                   }
 
                   var ix = 0; var iy = 0; var tx = 0f; var ty = 0f
                   overlayRoot.setOnTouchListener { _, e ->
                       when (e.action) {
-                          MotionEvent.ACTION_DOWN -> { ix = params.x; iy = params.y; tx = e.rawX; ty = e.rawY; true }
+                          MotionEvent.ACTION_DOWN -> { ix = overlayParams.x; iy = overlayParams.y; tx = e.rawX; ty = e.rawY; true }
                           MotionEvent.ACTION_MOVE -> {
-                              params.x = ix + (e.rawX - tx).toInt()
-                              params.y = iy + (e.rawY - ty).toInt()
-                              windowManager.updateViewLayout(overlayRoot, params)
+                              overlayParams.x = ix + (e.rawX - tx).toInt()
+                              overlayParams.y = iy + (e.rawY - ty).toInt()
+                              windowManager.updateViewLayout(overlayRoot, overlayParams)
                               true
                           }
                           else -> false
                       }
                   }
-                  windowManager.addView(overlayRoot, params)
+
+                  var startW = 0; var startH = 0; var rtx = 0f; var rty = 0f
+                  resizeHandle.setOnTouchListener { _, e ->
+                      when (e.action) {
+                          MotionEvent.ACTION_DOWN -> {
+                              startW = overlayRoot.width
+                              startH = overlayRoot.height
+                              rtx = e.rawX
+                              rty = e.rawY
+                              true
+                          }
+                          MotionEvent.ACTION_MOVE -> {
+                              val newW = (startW + (e.rawX - rtx).toInt()).coerceIn((sw * 0.45).toInt(), (sw * 0.98).toInt())
+                              val newH = (startH + (e.rawY - rty).toInt()).coerceIn(130, (sh * 0.65).toInt())
+                              overlayParams.width = newW
+                              overlayParams.height = newH
+                              windowManager.updateViewLayout(overlayRoot, overlayParams)
+                              true
+                          }
+                          else -> false
+                      }
+                  }
+
+                  windowManager.addView(overlayRoot, overlayParams)
               }
 
               private fun updateStatus(text: String, colorHex: String) {
@@ -671,7 +789,7 @@ jobs:
                       .build()
 
                   if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                      updateStatus("● ดักเสียงไม่ได้ (ลองเลือกแชร์ทั้งหน้าจอ)", "#F87171")
+                      updateStatus("● ดักเสียงไม่ได้ (แชร์ทั้งหน้าจอ)", "#F87171")
                       return
                   }
 
@@ -709,8 +827,8 @@ jobs:
 
                               val elapsed = now - startT
                               val silence = now - lastSpeechT
-                              // ตัดประโยคไวทุกๆ 0.4 วิที่เงียบ หรือสูงสุด 2.4 วิ (ไม่จำกัดโควตา)
-                              if (hasSpeech && ((silence > 400 && elapsed > 700) || elapsed >= 2400)) {
+                              // รอจังหวะเว้นวรรค 0.55 วิ หรือสูงสุด 3.2 วิ เพื่อให้ได้ประโยคสมบูรณ์ขึ้น
+                              if (hasSpeech && ((silence > 550 && elapsed > 900) || elapsed >= 3200)) {
                                   val pcm = acc.toByteArray()
                                   acc.reset()
                                   hasSpeech = false
@@ -751,9 +869,10 @@ jobs:
                               )
                           )
                           recognizer = OfflineRecognizer(assetManager = assets, config = config)
-                          updateStatus("● พร้อมฟัง (ออฟไลน์ 100%)", "#34D399")
+                          val modeLabel = if (groqKey.isNotEmpty()) "● พร้อมฟัง (AI สำนวนธรรมชาติ)" else "● พร้อมฟัง (ออฟไลน์ 100%)"
+                          updateStatus(modeLabel, "#34D399")
                       } catch (e: Exception) {
-                          updateStatus("● โหลดโมเดลไม่สำเร็จ: ${e.message}", "#F87171")
+                          updateStatus("● โหลดโมเดลพลาด: ${e.message}", "#F87171")
                           return@launch
                       }
 
@@ -770,7 +889,12 @@ jobs:
 
                           val cleanSrc = rawText.replace(Regex("<\\|[^|]+\\|>"), "").trim()
                           if (cleanSrc.any { it.isLetterOrDigit() }) {
-                              val thText = translateOffline(cleanSrc)
+                              val thText = if (groqKey.isNotEmpty()) {
+                                  translateWithGroq(cleanSrc) ?: translateOffline(cleanSrc)
+                              } else {
+                                  translateOffline(cleanSrc)
+                              }
+
                               withContext(Dispatchers.Main) {
                                   if (showBilingual) {
                                       srcTextView.visibility = View.VISIBLE
@@ -778,14 +902,51 @@ jobs:
                                   } else {
                                       srcTextView.visibility = View.GONE
                                   }
+                                  if (lastTranslatedLine.isNotEmpty() && lastTranslatedLine != thText) {
+                                      prevThTextView.visibility = View.VISIBLE
+                                      prevThTextView.text = lastTranslatedLine
+                                  }
+                                  lastTranslatedLine = thText
                                   thTextView.text = thText
-                                  statusLabel.text = "● พร้อมฟัง (ออฟไลน์)"
+                                  textScrollView.post { textScrollView.fullScroll(View.FOCUS_DOWN) }
+                                  statusLabel.text = if (groqKey.isNotEmpty()) "● พร้อมฟัง (AI)" else "● พร้อมฟัง"
                                   statusLabel.setTextColor(Color.parseColor("#34D399"))
                               }
                           } else {
                               updateStatus("● รอเสียงพูด...", "#94A3B8")
                           }
                       }
+                  }
+              }
+
+              private fun translateWithGroq(text: String): String? {
+                  return try {
+                      val url = URL("https://api.groq.com/openai/v1/chat/completions")
+                      val conn = (url.openConnection() as HttpURLConnection).apply {
+                          requestMethod = "POST"
+                          setRequestProperty("Authorization", "Bearer $groqKey")
+                          setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                          doOutput = true
+                          connectTimeout = 4000
+                          readTimeout = 4000
+                      }
+                      val body = JSONObject().apply {
+                          put("model", "llama-3.3-70b-versatile")
+                          put("temperature", 0.3)
+                          put("max_tokens", 120)
+                          put("messages", JSONArray().apply {
+                              put(JSONObject().put("role", "system").put("content",
+                                  "คุณคือนักแปลซับไตเติลมืออาชีพ แปลประโยคที่ได้รับเป็นภาษาพูดไทยที่เข้าใจง่าย เป็นธรรมชาติ กระชับ เหมือนซับซีรีส์หรืออนิเมะ ไม่แปลตรงตัวแข็งทื่อ ตอบเฉพาะคำแปลภาษาไทยเท่านั้น ห้ามอธิบายเพิ่ม"))
+                              put(JSONObject().put("role", "user").put("content", text))
+                          })
+                      }
+                      conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+                      if (conn.responseCode == 200) {
+                          val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                          JSONObject(resp).getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content").trim()
+                      } else null
+                  } catch (_: Exception) {
+                      null
                   }
               }
 
@@ -833,7 +994,7 @@ jobs:
                       NotificationChannel(id, "JP-TH Live Sub", NotificationManager.IMPORTANCE_LOW)
                   )
                   val notif = Notification.Builder(this, id)
-                      .setContentTitle("Live Subtitle (Offline AI) กำลังทำงาน")
+                      .setContentTitle("Live Subtitle v2.1 กำลังทำงาน")
                       .setSmallIcon(R.drawable.ic_launcher_foreground)
                       .build()
                   if (Build.VERSION.SDK_INT >= 29) {
@@ -856,6 +1017,288 @@ jobs:
               override fun onBind(intent: Intent?): IBinder? = null
           }
           EOF
+
+          # สร้างหน้า Web App (index.html) สำหรับใช้งานบน iOS (iPhone/iPad) และคอมพิวเตอร์
+          cat << 'EOF' > index.html
+          <!DOCTYPE html>
+          <html lang="th">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+            <title>Live Subtitle Web (iOS & Desktop)</title>
+            <style>
+              :root { --bg: #0f172a; --card: #1e293b; --accent: #38bdf8; --primary: #2563eb; }
+              * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+              body { margin: 0; background: var(--bg); color: #fff; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+              .container { width: 100%; max-width: 680px; }
+              h1 { font-size: 22px; margin: 0 0 6px; }
+              p.sub { color: #94a3b8; font-size: 13px; margin: 0 0 18px; }
+              .panel { background: var(--card); border: 1px solid #334155; border-radius: 16px; padding: 16px; margin-bottom: 16px; }
+              .row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; align-items: center; }
+              select, input[type="text"] {
+                background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 10px;
+                padding: 10px 12px; font-size: 14px; flex: 1; min-width: 140px;
+              }
+              button {
+                background: var(--primary); color: #fff; border: none; border-radius: 10px;
+                padding: 11px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+              }
+              button.stop { background: #dc2626; }
+              button.pip { background: #0284c7; }
+              button.secondary { background: #334155; }
+              .slider-group { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #cbd5e1; }
+              #subBox {
+                width: 100%; min-height: 150px; border-radius: 18px; padding: 18px 20px;
+                border: 2px solid rgba(56, 189, 248, 0.75);
+                background: rgba(15, 23, 42, 0.88);
+                resize: both; overflow: auto; transition: background 0.15s;
+              }
+              #status { font-size: 12px; color: #34d399; margin-bottom: 8px; }
+              #srcText { font-size: 14px; color: #94a3b8; margin-bottom: 6px; min-height: 18px; }
+              #prevTh { font-size: 15px; color: #cbd5e1; margin-bottom: 6px; }
+              #thText { font-size: 20px; font-weight: 700; line-height: 1.45; color: #ffffff; }
+              .note { font-size: 12px; color: #94a3b8; margin-top: 12px; line-height: 1.5; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>Live Subtitle Web (iOS / iPad / PC)</h1>
+              <p class="sub">แปลเสียงสดเป็นซับไทย พร้อมโหมดหน้าต่างลอย Picture-in-Picture สำหรับ iOS</p>
+
+              <div class="panel">
+                <div class="row">
+                  <select id="langSelect">
+                    <option value="ja-JP">ญี่ปุ่น (JP) → ไทย</option>
+                    <option value="en-US">อังกฤษ (EN) → ไทย</option>
+                    <option value="ko-KR">เกาหลี (KO) → ไทย</option>
+                  </select>
+                  <button id="startBtn" onclick="toggleListen()">เริ่มฟังและแปลสด</button>
+                  <button class="pip" onclick="openPiP()">หน้าต่างลอย (PiP)</button>
+                </div>
+
+                <div class="row">
+                  <input type="text" id="groqKey" placeholder="Groq API Key (ไม่บังคับ - ใส่เพื่อให้แปลสำนวนธรรมชาติ)" />
+                </div>
+
+                <div class="row" style="justify-content: space-between; margin-bottom: 0;">
+                  <div class="slider-group">
+                    <span>ความเข้มพื้นหลัง:</span>
+                    <input type="range" id="opacityRange" min="15" max="98" value="88" oninput="updateOpacity(this.value)" />
+                  </div>
+                  <div class="slider-group">
+                    <button class="secondary" onclick="changeFont(-2)">A-</button>
+                    <button class="secondary" onclick="changeFont(2)">A+</button>
+                    <label><input type="checkbox" id="showOrig" checked /> โชว์ต้นฉบับ</label>
+                  </div>
+                </div>
+              </div>
+
+              <div id="subBox">
+                <div id="status">● พร้อมใช้งาน (กด "เริ่มฟังและแปลสด")</div>
+                <div id="srcText"></div>
+                <div id="prevTh"></div>
+                <div id="thText">เปิดเสียงวิดีโอใกล้ไมค์ หรือเปิดหน้าต่างลอย PiP บน iPad/iPhone ได้เลย</div>
+              </div>
+
+              <p class="note">
+                <b>วิธีใช้บน iPhone / iPad (Safari):</b> กด <b>เริ่มฟังและแปลสด</b> แล้วกดปุ่ม <b>หน้าต่างลอย (PiP)</b> จากนั้นปัดสลับไปเปิดแอปวิดีโอหรือเบราว์เซอร์ได้เลย กล่องซับจะลอยทับหน้าจอให้อัตโนมัติ (สามารถลากมุมขวาล่างของกล่องเพื่อย่อ–ขยายขนาดได้)
+              </p>
+            </div>
+
+            <canvas id="pipCanvas" width="720" height="240" style="display:none;"></canvas>
+            <video id="pipVideo" playsinline muted style="display:none;"></video>
+
+            <script>
+              let recognition = null;
+              let isListening = false;
+              let fontSize = 20;
+              let currentTh = "รอเสียงพูด...";
+              let prevTh = "";
+              let currentSrc = "";
+              let translateTimer = null;
+              let lastTranslatedSrc = "";
+
+              const groqInput = document.getElementById('groqKey');
+              groqInput.value = localStorage.getItem('web_groq_key') || '';
+              groqInput.addEventListener('change', () => localStorage.setItem('web_groq_key', groqInput.value.trim()));
+
+              function updateOpacity(val) {
+                document.getElementById('subBox').style.background = `rgba(15, 23, 42, ${val / 100})`;
+              }
+
+              function changeFont(delta) {
+                fontSize = Math.min(34, Math.max(14, fontSize + delta));
+                document.getElementById('thText').style.fontSize = fontSize + 'px';
+              }
+
+              async function translateText(text) {
+                if (!text || text === lastTranslatedSrc) return;
+                lastTranslatedSrc = text;
+                const key = groqInput.value.trim();
+
+                if (key) {
+                  try {
+                    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                      method: 'POST',
+                      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        model: 'llama-3.3-70b-versatile',
+                        temperature: 0.3,
+                        max_tokens: 120,
+                        messages: [
+                          { role: 'system', content: 'แปลประโยคต่อไปนี้เป็นซับไตเติลภาษาพูดไทยที่เข้าใจง่าย เป็นธรรมชาติ กระชับ ตอบเฉพาะคำแปลไทยเท่านั้น' },
+                          { role: 'user', content: text }
+                        ]
+                      })
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      setSubtitle(data.choices[0].message.content.trim());
+                      return;
+                    }
+                  } catch (e) {}
+                }
+
+                // ระบบแปลฟรีอัตโนมัติ (ไม่ต้องใช้ API Key)
+                try {
+                  const sl = document.getElementById('langSelect').value.split('-')[0];
+                  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=th&dt=t&q=${encodeURIComponent(text)}`;
+                  const res = await fetch(url);
+                  const data = await res.json();
+                  const translated = data[0].map(item => item[0]).join('');
+                  setSubtitle(translated);
+                } catch (e) {
+                  document.getElementById('status').textContent = '● ขัดข้องชั่วคราว กำลังฟังต่อ...';
+                }
+              }
+
+              function setSubtitle(th) {
+                if (currentTh && currentTh !== th && currentTh !== "รอเสียงพูด...") {
+                  prevTh = currentTh;
+                  document.getElementById('prevTh').textContent = prevTh;
+                }
+                currentTh = th;
+                document.getElementById('thText').textContent = th;
+                drawPiPCanvas();
+              }
+
+              function toggleListen() {
+                const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRec) {
+                  alert('เบราว์เซอร์นี้ไม่รองรับการถอดเสียงสด กรุณาเปิดผ่าน Safari (iOS) หรือ Google Chrome');
+                  return;
+                }
+                if (isListening) {
+                  isListening = false;
+                  if (recognition) recognition.stop();
+                  document.getElementById('startBtn').textContent = 'เริ่มฟังและแปลสด';
+                  document.getElementById('startBtn').classList.remove('stop');
+                  document.getElementById('status').textContent = '● หยุดฟังแล้ว';
+                  return;
+                }
+
+                recognition = new SpeechRec();
+                recognition.lang = document.getElementById('langSelect').value;
+                recognition.continuous = true;
+                recognition.interimResults = true;
+
+                recognition.onstart = () => {
+                  isListening = true;
+                  document.getElementById('startBtn').textContent = 'หยุดการฟัง';
+                  document.getElementById('startBtn').classList.add('stop');
+                  document.getElementById('status').textContent = '● กำลังฟังเสียงสด...';
+                };
+
+                recognition.onresult = (event) => {
+                  let transcript = '';
+                  for (let i = event.resultIndex; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                  }
+                  transcript = transcript.trim();
+                  if (!transcript) return;
+
+                  currentSrc = transcript;
+                  document.getElementById('srcText').textContent = document.getElementById('showOrig').checked ? transcript : '';
+                  drawPiPCanvas();
+
+                  clearTimeout(translateTimer);
+                  const isFinal = event.results[event.results.length - 1].isFinal;
+                  translateTimer = setTimeout(() => translateText(transcript), isFinal ? 100 : 650);
+                };
+
+                recognition.onend = () => {
+                  if (isListening) recognition.start();
+                };
+
+                recognition.start();
+              }
+
+              function drawPiPCanvas() {
+                const canvas = document.getElementById('pipCanvas');
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(4, 4, canvas.width - 8, canvas.height - 8);
+
+                if (document.getElementById('showOrig').checked && currentSrc) {
+                  ctx.fillStyle = '#94a3b8';
+                  ctx.font = '22px sans-serif';
+                  ctx.fillText(currentSrc.slice(-45), 24, 48);
+                }
+
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 30px sans-serif';
+                wrapText(ctx, currentTh, 24, 105, canvas.width - 48, 40);
+              }
+
+              function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+                const chars = text.split('');
+                let line = '';
+                let curY = y;
+                for (let n = 0; n < chars.length; n++) {
+                  const testLine = line + chars[n];
+                  if (ctx.measureText(testLine).width > maxWidth && n > 0) {
+                    ctx.fillText(line, x, curY);
+                    line = chars[n];
+                    curY += lineHeight;
+                  } else {
+                    line = testLine;
+                  }
+                }
+                ctx.fillText(line, x, curY);
+              }
+
+              async function openPiP() {
+                try {
+                  drawPiPCanvas();
+                  const canvas = document.getElementById('pipCanvas');
+                  const video = document.getElementById('pipVideo');
+                  if (!video.srcObject) {
+                    video.srcObject = canvas.captureStream(10);
+                  }
+                  await video.play();
+                  if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                  } else {
+                    await video.requestPictureInPicture();
+                  }
+                } catch (e) {
+                  alert('อุปกรณ์นี้ไม่รองรับหน้าต่างลอย PiP อัตโนมัติ สามารถเปิดหน้าเว็บนี้ค้างไว้แบบแบ่งครึ่งหน้าจอ (Split View) ได้เลยครับ');
+                }
+              }
+            </script>
+          </body>
+          </html>
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Update iOS Web App [skip ci]" || true
+          git push || true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
