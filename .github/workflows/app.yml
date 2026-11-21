@@ -945,25 +945,17 @@ jobs:
                   }
               }
 
-              private fun isHumanSpeechFrame(buf: ByteArray, len: Int): Boolean {
+              private fun calculateRms(buf: ByteArray, len: Int): Double {
                   val count = len / 2
-                  if (count < 2) return false
+                  if (count <= 0) return 0.0
                   var sumSq = 0.0
-                  var zeroCrossings = 0
-                  var prevSample = ((buf[1].toInt() shl 8) or (buf[0].toInt() and 0xFF)).toShort().toInt()
-                  sumSq += prevSample.toDouble() * prevSample.toDouble()
-
-                  for (i in 1 until count) {
-                      val sample = ((buf[i * 2 + 1].toInt() shl 8) or (buf[i * 2].toInt() and 0xFF)).toShort().toInt()
-                      sumSq += sample.toDouble() * sample.toDouble()
-                      if ((prevSample >= 0 && sample < 0) || (prevSample < 0 && sample >= 0)) {
-                          zeroCrossings++
-                      }
-                      prevSample = sample
+                  for (i in 0 until count) {
+                      val lo = buf[i * 2].toInt() and 0xFF
+                      val hi = buf[i * 2 + 1].toInt()
+                      val sample = ((hi shl 8) or lo).toShort().toDouble()
+                      sumSq += sample * sample
                   }
-                  val rms = sqrt(sumSq / count)
-                  val zcr = zeroCrossings.toDouble() / count
-                  return rms > 135.0 && zcr in 0.02..0.38
+                  return sqrt(sumSq / count)
               }
 
               @SuppressLint("MissingPermission")
@@ -982,7 +974,7 @@ jobs:
                       .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
                       .build()
 
-                  val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                  val minBuf = AudioRecord.getMinBufferSize(sr, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT).coerceAtLeast(2048)
                   audioRecord = AudioRecord.Builder()
                       .setAudioPlaybackCaptureConfig(config)
                       .setAudioFormat(fmt)
@@ -990,60 +982,63 @@ jobs:
                       .build()
 
                   if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                      updateStatus("● ดักเสียงไม่ได้ (แชร์ทั้งหน้าจอ)", "#F87171")
+                      updateStatus("● ดักเสียงไม่ได้ (เลือกแชร์ทั้งหน้าจอ)", "#F87171")
                       return
                   }
 
                   audioRecord?.startRecording()
 
                   scope.launch {
-                      val buf = ByteArray(1024)
+                      val buf = ByteArray(2048)
                       val acc = ByteArrayOutputStream()
                       var startT = System.currentTimeMillis()
-                      var lastSpeechT = 0L
-                      var hasSpeech = false
-                      var speechFrames = 0
+                      var lastSoundT = 0L
+                      var lastAnySignalT = System.currentTimeMillis()
+                      var hasSound = false
                       var lastUiUpdate = 0L
+                      var warnedSilence = false
 
                       while (isActive) {
                           val read = audioRecord?.read(buf, 0, buf.size) ?: 0
                           if (isPaused) {
                               acc.reset()
-                              hasSpeech = false
-                              speechFrames = 0
+                              hasSound = false
                               continue
                           }
                           if (read > 0) {
-                              val isVoice = isHumanSpeechFrame(buf, read)
+                              val rms = calculateRms(buf, read)
                               val now = System.currentTimeMillis()
 
-                              if (isVoice) {
-                                  speechFrames++
-                                  lastSpeechT = now
-                                  if (speechFrames >= 3) {
-                                      if (!hasSpeech && now - lastUiUpdate > 300) {
-                                          updateStatus("● ได้ยินเสียงพูด...", "#34D399")
-                                          lastUiUpdate = now
-                                      }
-                                      hasSpeech = true
-                                  }
-                              } else if (!hasSpeech && now - lastSpeechT > 180) {
-                                  speechFrames = 0
+                              if (rms > 1.0) {
+                                  lastAnySignalT = now
+                                  warnedSilence = false
+                              } else if (!warnedSilence && now - lastAnySignalT > 4500) {
+                                  updateStatus("● ยังไม่ได้รับเสียง (เร่งเสียง / แชร์ทั้งหน้าจอ)", "#FBBF24")
+                                  warnedSilence = true
                               }
 
-                              if (hasSpeech) {
+                              // จับเสียงพูดแม้เปิดระดับเสียงเบา (rms > 22) แล้วให้โมเดล SenseVoice คัดกรองเสียงดนตรีออกเอง
+                              if (rms > 22.0) {
+                                  lastSoundT = now
+                                  if (!hasSound && now - lastUiUpdate > 250) {
+                                      updateStatus("● ได้ยินเสียงพูด...", "#34D399")
+                                      lastUiUpdate = now
+                                  }
+                                  hasSound = true
+                              }
+
+                              if (hasSound) {
                                   acc.write(buf, 0, read)
                               } else {
                                   startT = now
                               }
 
                               val elapsed = now - startT
-                              val silence = now - lastSpeechT
-                              if (hasSpeech && ((silence > 500 && elapsed > 850) || elapsed >= 3400)) {
+                              val silence = now - lastSoundT
+                              if (hasSound && ((silence > 450 && elapsed > 800) || elapsed >= 3200)) {
                                   val pcm = acc.toByteArray()
                                   acc.reset()
-                                  hasSpeech = false
-                                  speechFrames = 0
+                                  hasSound = false
                                   startT = now
                                   audioChannel.trySend(pcm)
                               }
@@ -1081,7 +1076,7 @@ jobs:
                               )
                           )
                           recognizer = OfflineRecognizer(assetManager = assets, config = config)
-                          val modeLabel = if (groqKey.isNotEmpty()) "● พร้อมฟัง (AI บริบท + กรองเสียง)" else "● พร้อมฟัง (ออฟไลน์ + กรองเสียง)"
+                          val modeLabel = if (groqKey.isNotEmpty()) "● พร้อมฟัง (AI บริบท + กรองเสียง)" else "● พร้อมฟัง (ออฟไลน์)"
                           updateStatus(modeLabel, "#34D399")
                       } catch (e: Exception) {
                           updateStatus("● โหลดโมเดลพลาด: ${e.message}", "#F87171")
@@ -1099,6 +1094,7 @@ jobs:
                           val rawText = rec.getResult(stream).text
                           stream.release()
 
+                          // ตัดแท็กเสียงดนตรี/เสียงประกอบ <|BGM|> <|NOSPEECH|> ของ SenseVoice ออก
                           val cleanSrc = rawText.replace(Regex("<\\|[^|]+\\|>"), "").trim()
                           if (cleanSrc.any { it.isLetterOrDigit() }) {
                               val historySnapshot = synchronized(contextHistory) { ArrayList(contextHistory) }
@@ -1132,8 +1128,6 @@ jobs:
                                   statusLabel.text = if (groqKey.isNotEmpty()) "● พร้อมฟัง (AI บริบท)" else "● พร้อมฟัง"
                                   statusLabel.setTextColor(Color.parseColor("#34D399"))
                               }
-                          } else {
-                              updateStatus("● กรองเสียงดนตรี/เสียงประกอบ...", "#94A3B8")
                           }
                       }
                   }
@@ -1866,7 +1860,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Release v1.0 fix touch listener compile error [skip ci]" || true
+          git commit -m "Release v1.0 fix audio capture sensitivity threshold [skip ci]" || true
           git push || true
 
       - name: Set up JDK 17
